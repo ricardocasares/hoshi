@@ -1,18 +1,19 @@
-module Main exposing (Model, Msg(..), main)
+module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Toast, ToastType, User, main)
 
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, a, button, div, footer, h1, h2, img, input, label, li, option, p, select, span, text, ul)
+import Html exposing (Html, a, button, div, footer, h1, h2, input, label, li, option, p, select, span, text, ul)
 import Html.Attributes exposing (attribute, class, for, href, id, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import InteropDefinitions as IO
 import InteropPorts as IO
 import Json.Decode as Decode
-import Task
 import Phosphor as Icon exposing (IconWeight(..))
 import Routes exposing (Route(..))
+import Task
 import Url
+
 
 
 -- Data Types
@@ -73,6 +74,7 @@ type alias Model =
     , user : RemoteData Http.Error User
     , selectedTopics : List String
     , searchQuery : String
+    , topicSearchQuery : String
     , sortBy : SortOption
     , accumulatedRepos : List Repository
     , nextPageUrl : Maybe String
@@ -96,11 +98,9 @@ type Msg
     | UrlChanged Url.Url
     | UsernameChanged String
     | SearchRepositories String
-    | FetchUser String
+    | UpdateTopicSearch String
     | UserFetched (Result Http.Error User)
-    | FetchRepositories String
     | RepositoriesFetchedRaw String (Result Http.Error String)
-    | RepositoriesFetched (Result Http.Error (List Repository))
     | ToggleTopic String
     | ClearTopics
     | ChangeSort SortOption
@@ -147,14 +147,6 @@ fetchRepositories username =
         }
 
 
-fetchNextPage : String -> String -> Cmd Msg
-fetchNextPage username nextUrl =
-    Http.get
-        { url = nextUrl
-        , expect = Http.expectString (RepositoriesFetchedRaw username)
-        }
-
-
 userDecoder : Decode.Decoder User
 userDecoder =
     Decode.map4 User
@@ -188,10 +180,10 @@ getAllTopics repos =
         |> unique
 
 
-getTopicCounts : List Repository -> List String -> List (String, Int)
+getTopicCounts : List Repository -> List String -> List ( String, Int )
 getTopicCounts repos topics =
     topics
-        |> List.map (\topic -> (topic, countTopicOccurrences repos topic))
+        |> List.map (\topic -> ( topic, countTopicOccurrences repos topic ))
 
 
 countTopicOccurrences : List Repository -> String -> Int
@@ -213,6 +205,7 @@ filterByTopics : List String -> List Repository -> List Repository
 filterByTopics selectedTopics repos =
     if List.isEmpty selectedTopics then
         repos
+
     else
         repos
             |> List.filter (\repo -> List.any (\topic -> List.member topic repo.topics) selectedTopics)
@@ -222,15 +215,18 @@ filterBySearch : String -> List Repository -> List Repository
 filterBySearch query repos =
     if String.isEmpty (String.trim query) then
         repos
+
     else
         let
-            lowerQuery = String.toLower query
+            lowerQuery =
+                String.toLower query
         in
         repos
-            |> List.filter (\repo ->
-                String.contains lowerQuery (String.toLower repo.name) ||
-                (repo.description |> Maybe.map (String.toLower >> String.contains lowerQuery) |> Maybe.withDefault False)
-            )
+            |> List.filter
+                (\repo ->
+                    String.contains lowerQuery (String.toLower repo.name)
+                        || (repo.description |> Maybe.map (String.toLower >> String.contains lowerQuery) |> Maybe.withDefault False)
+                )
 
 
 sortRepos : SortOption -> List Repository -> List Repository
@@ -238,8 +234,10 @@ sortRepos sortOption repos =
     case sortOption of
         SortByStars ->
             List.sortBy (.stargazersCount >> negate) repos
+
         SortByUpdated ->
             List.sortBy (.updatedAt >> String.toLower) repos
+
         SortByName ->
             List.sortBy (.name >> String.toLower) repos
 
@@ -247,10 +245,17 @@ sortRepos sortOption repos =
 stringToSortOption : String -> SortOption
 stringToSortOption str =
     case str of
-        "stars" -> SortByStars
-        "updated" -> SortByUpdated
-        "name" -> SortByName
-        _ -> SortByStars
+        "stars" ->
+            SortByStars
+
+        "updated" ->
+            SortByUpdated
+
+        "name" ->
+            SortByName
+
+        _ ->
+            SortByStars
 
 
 errorToString : Http.Error -> String
@@ -258,12 +263,16 @@ errorToString error =
     case error of
         Http.BadUrl url ->
             "Bad URL: " ++ url
+
         Http.Timeout ->
             "Request timed out"
+
         Http.NetworkError ->
             "Network error"
+
         Http.BadStatus status ->
             "Bad status: " ++ String.fromInt status
+
         Http.BadBody body ->
             "Bad body: " ++ body
 
@@ -284,11 +293,49 @@ uniqueHelper seen remaining =
     case remaining of
         [] ->
             List.reverse seen
+
         x :: xs ->
             if List.member x seen then
                 uniqueHelper seen xs
+
             else
                 uniqueHelper (x :: seen) xs
+
+
+fuzzyMatch : String -> String -> Bool
+fuzzyMatch query target =
+    let
+        lowerQuery : String
+        lowerQuery =
+            String.toLower query
+    in
+    if String.isEmpty (String.trim lowerQuery) then
+        True
+
+    else
+        let
+            lowerTarget : String
+            lowerTarget =
+                String.toLower target
+        in
+        fuzzyMatchHelper (String.toList lowerQuery) (String.toList lowerTarget)
+
+
+fuzzyMatchHelper : List Char -> List Char -> Bool
+fuzzyMatchHelper queryChars targetChars =
+    case ( queryChars, targetChars ) of
+        ( [], _ ) ->
+            True
+
+        ( _, [] ) ->
+            False
+
+        ( q :: qs, t :: ts ) ->
+            if q == t then
+                fuzzyMatchHelper qs ts
+
+            else
+                fuzzyMatchHelper queryChars ts
 
 
 
@@ -346,10 +393,16 @@ main =
 init : IO.Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init _ url key =
     let
-        route = Routes.fromUrl url
-        initialUsername = case route of
-            Repositories username -> username
-            _ -> ""
+        route =
+            Routes.fromUrl url
+
+        initialUsername =
+            case route of
+                Repositories username ->
+                    username
+
+                _ ->
+                    ""
     in
     ( { key = key
       , url = url
@@ -359,6 +412,7 @@ init _ url key =
       , user = NotAsked
       , selectedTopics = []
       , searchQuery = ""
+      , topicSearchQuery = ""
       , sortBy = SortByStars
       , accumulatedRepos = []
       , nextPageUrl = Nothing
@@ -405,14 +459,24 @@ update msg model =
 
         UrlChanged url ->
             let
-                newRoute = Routes.fromUrl url
-                newUsername = case newRoute of
-                    Repositories username -> username
-                    _ -> model.username
-                cmds = case newRoute of
-                    Repositories username ->
-                        Cmd.batch [ fetchUser username, fetchRepositories username ]
-                    _ -> Cmd.none
+                newRoute =
+                    Routes.fromUrl url
+
+                newUsername =
+                    case newRoute of
+                        Repositories username ->
+                            username
+
+                        _ ->
+                            model.username
+
+                cmds =
+                    case newRoute of
+                        Repositories username ->
+                            Cmd.batch [ fetchUser username, fetchRepositories username ]
+
+                        _ ->
+                            Cmd.none
             in
             ( { model | url = url, route = newRoute, username = newUsername }, cmds )
 
@@ -422,8 +486,8 @@ update msg model =
         SearchRepositories query ->
             ( { model | searchQuery = query }, Cmd.none )
 
-        FetchUser username ->
-            ( { model | user = Loading }, fetchUser username )
+        UpdateTopicSearch query ->
+            ( { model | topicSearchQuery = query }, Cmd.none )
 
         UserFetched result ->
             case result of
@@ -431,15 +495,13 @@ update msg model =
                     ( { model | user = Success user }
                     , Task.perform (\_ -> AddToast ("Loaded user @" ++ user.login) ToastInfo) (Task.succeed ())
                     )
+
                 Err error ->
                     ( { model | user = Failure error }
                     , Task.perform (\_ -> AddToast ("Failed to load user: " ++ errorToString error) ToastError) (Task.succeed ())
                     )
 
-        FetchRepositories username ->
-            ( { model | repositories = Loading }, fetchRepositories username )
-
-        RepositoriesFetchedRaw username result ->
+        RepositoriesFetchedRaw _ result ->
             case result of
                 Ok jsonString ->
                     case Decode.decodeString (Decode.list repositoryDecoder) jsonString of
@@ -447,27 +509,23 @@ update msg model =
                             ( { model | repositories = Success repos }
                             , Task.perform (\_ -> AddToast ("Loaded " ++ String.fromInt (List.length repos) ++ " repositories") ToastSuccess) (Task.succeed ())
                             )
+
                         Err decodeError ->
                             ( { model | repositories = Failure (Http.BadBody (Decode.errorToString decodeError)) }
                             , Task.perform (\_ -> AddToast "Failed to parse repository data" ToastError) (Task.succeed ())
                             )
+
                 Err error ->
                     ( { model | repositories = Failure error }
                     , Task.perform (\_ -> AddToast ("Failed to load repositories: " ++ errorToString error) ToastError) (Task.succeed ())
                     )
-
-        RepositoriesFetched result ->
-            case result of
-                Ok repos ->
-                    ( { model | repositories = Success repos }, Cmd.none )
-                Err error ->
-                    ( { model | repositories = Failure error }, Cmd.none )
 
         ToggleTopic topic ->
             let
                 newSelectedTopics =
                     if List.member topic model.selectedTopics then
                         List.filter (\t -> t /= topic) model.selectedTopics
+
                     else
                         topic :: model.selectedTopics
             in
@@ -486,7 +544,12 @@ update msg model =
 
         ToggleTheme ->
             let
-                newTheme = if model.theme == "light" then "dark" else "light"
+                newTheme =
+                    if model.theme == "light" then
+                        "dark"
+
+                    else
+                        "light"
             in
             ( { model | theme = newTheme }, Cmd.none )
 
@@ -532,7 +595,7 @@ viewBody model =
                     Home ->
                         viewHomePage model
 
-                    Repositories username ->
+                    Repositories _ ->
                         viewRepositoriesPage model
 
                     Settings ->
@@ -609,11 +672,11 @@ viewDrawerSide currentRoute =
                 , List.map (viewMenuItem currentRoute) navigationItems
                 , [ li [ class "menu-title" ] [ text "Settings" ]
                   , li []
-                      [ button [ onClick ToggleTheme, class "btn btn-ghost w-full justify-start" ]
-                          [ Icon.palette Regular |> Icon.toHtml []
-                          , text "Toggle Theme"
-                          ]
-                      ]
+                        [ button [ onClick ToggleTheme, class "btn btn-ghost w-full justify-start" ]
+                            [ Icon.palette Regular |> Icon.toHtml []
+                            , text "Toggle Theme"
+                            ]
+                        ]
                   , li [ class "menu-title" ] [ text "Account" ]
                   ]
                 , List.map (viewMenuItem currentRoute) userActionItems
@@ -654,14 +717,16 @@ viewHomePage model =
                                         , class "btn btn-primary join-item"
                                         , Html.Attributes.disabled (String.isEmpty (String.trim model.username) || model.user == Loading || model.repositories == Loading)
                                         ]
-                        [ case (model.user, model.repositories) of
-                            (Loading, _) ->
-                                div [ class "loading loading-spinner loading-md" ] []
-                            (_, Loading) ->
-                                div [ class "loading loading-spinner loading-md" ] []
-                            _ ->
-                                Icon.magnifyingGlass Regular |> Icon.toHtml []
-                        ]
+                                        [ case ( model.user, model.repositories ) of
+                                            ( Loading, _ ) ->
+                                                div [ class "loading loading-spinner loading-md" ] []
+
+                                            ( _, Loading ) ->
+                                                div [ class "loading loading-spinner loading-md" ] []
+
+                                            _ ->
+                                                Icon.magnifyingGlass Regular |> Icon.toHtml []
+                                        ]
                                     ]
                                 ]
                             , div [ class "divider" ] [ text "Popular Users" ]
@@ -705,12 +770,26 @@ viewSidebar model =
                         , class "btn btn-xs btn-outline btn-error"
                         ]
                         [ text "Clear" ]
+
                   else
                     text ""
+                ]
+            , div [ class "form-control mb-4" ]
+                [ label [ class "label" ]
+                    [ span [ class "label-text text-sm" ] [ text "Search topics" ] ]
+                , input
+                    [ type_ "text"
+                    , placeholder "Type to filter topics..."
+                    , value model.topicSearchQuery
+                    , onInput UpdateTopicSearch
+                    , class "input input-bordered input-sm"
+                    ]
+                    []
                 ]
             , if not (List.isEmpty model.selectedTopics) then
                 div [ class "flex flex-wrap gap-1 mb-4" ]
                     (List.map viewSelectedTopicChip model.selectedTopics)
+
               else
                 text ""
             ]
@@ -721,10 +800,20 @@ viewSidebar model =
 
                 Success repos ->
                     let
-                        allTopics = getAllTopics repos
-                        topicCounts = getTopicCounts repos allTopics
+                        allTopics =
+                            getAllTopics repos
+
+                        topicCounts =
+                            getTopicCounts repos allTopics
+
+                        filteredTopicCounts =
+                            if String.isEmpty (String.trim model.topicSearchQuery) then
+                                topicCounts
+
+                            else
+                                List.filter (\( topic, _ ) -> fuzzyMatch model.topicSearchQuery topic) topicCounts
                     in
-                    List.map (viewTopicFilter model.selectedTopics) (List.sortBy Tuple.first topicCounts)
+                    List.map (viewTopicFilter model.selectedTopics) (List.sortBy Tuple.first filteredTopicCounts)
 
                 _ ->
                     [ div [ class "text-center py-8 text-base-content/60" ]
@@ -736,19 +825,18 @@ viewSidebar model =
         ]
 
 
-viewTopicChip : String -> Html Msg
-viewTopicChip topic =
-    div [ class "badge badge-primary gap-2" ]
-        [ text topic
-        , button [ onClick (ToggleTopic topic), class "btn btn-xs btn-circle btn-ghost" ] [ text "×" ]
-        ]
-
-
-viewTopicFilter : List String -> (String, Int) -> Html Msg
-viewTopicFilter selectedTopics (topic, count) =
+viewTopicFilter : List String -> ( String, Int ) -> Html Msg
+viewTopicFilter selectedTopics ( topic, count ) =
     let
-        isSelected = List.member topic selectedTopics
-        buttonClass = if isSelected then "btn-primary" else "btn-ghost"
+        isSelected =
+            List.member topic selectedTopics
+
+        buttonClass =
+            if isSelected then
+                "btn-primary"
+
+            else
+                "btn-ghost"
     in
     button
         [ onClick (ToggleTopic topic)
@@ -803,6 +891,7 @@ viewHeader model =
                                 , case user.bio of
                                     Just bio ->
                                         div [ class "text-sm text-base-content/60 mt-1" ] [ text bio ]
+
                                     Nothing ->
                                         text ""
                                 ]
@@ -900,9 +989,14 @@ viewContent model =
 
             Success repos ->
                 let
-                    filteredRepos = filterAndSortRepos model repos
-                    totalCount = List.length repos
-                    filteredCount = List.length filteredRepos
+                    filteredRepos =
+                        filterAndSortRepos model repos
+
+                    totalCount =
+                        List.length repos
+
+                    filteredCount =
+                        List.length filteredRepos
                 in
                 div []
                     [ div [ class "mb-6" ]
@@ -919,6 +1013,7 @@ viewContent model =
                                     [ text
                                         (if totalCount == filteredCount then
                                             "No filters applied"
+
                                          else
                                             String.fromInt (totalCount - filteredCount) ++ " hidden"
                                         )
@@ -930,6 +1025,7 @@ viewContent model =
                                     , div [ class "stat-value" ] [ text (String.fromInt (List.length model.selectedTopics)) ]
                                     , div [ class "stat-desc" ] [ text "Topics selected" ]
                                     ]
+
                               else
                                 text ""
                             ]
@@ -962,6 +1058,7 @@ viewRepositoryCard repo =
             , case repo.description of
                 Just desc ->
                     p [ class "text-sm text-base-content/80 mb-4 line-clamp-2" ] [ text desc ]
+
                 Nothing ->
                     text ""
             , div [ class "flex flex-wrap gap-1 mb-4" ]
@@ -973,6 +1070,7 @@ viewRepositoryCard repo =
                             [ div [ class "w-3 h-3 rounded-full bg-primary" ] []
                             , span [ class "text-sm font-medium" ] [ text lang ]
                             ]
+
                     Nothing ->
                         text ""
                 , div [ class "text-xs text-base-content/60" ]
@@ -1099,8 +1197,10 @@ viewToast toast =
         [ case toast.toastType of
             ToastSuccess ->
                 Icon.checkCircle Regular |> Icon.toHtml []
+
             ToastError ->
                 Icon.exclamationMark Regular |> Icon.toHtml []
+
             ToastInfo ->
                 Icon.info Regular |> Icon.toHtml []
         , span [] [ text toast.message ]
@@ -1118,7 +1218,9 @@ toastTypeToClass toastType =
     case toastType of
         ToastSuccess ->
             "alert-success"
+
         ToastError ->
             "alert-error"
+
         ToastInfo ->
             "alert-info"
