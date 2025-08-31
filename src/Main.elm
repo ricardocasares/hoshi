@@ -1,0 +1,1124 @@
+module Main exposing (Model, Msg(..), main)
+
+import Browser
+import Browser.Navigation as Nav
+import Html exposing (Html, a, button, div, footer, h1, h2, img, input, label, li, option, p, select, span, text, ul)
+import Html.Attributes exposing (attribute, class, for, href, id, placeholder, type_, value)
+import Html.Events exposing (onClick, onInput)
+import Http
+import InteropDefinitions as IO
+import InteropPorts as IO
+import Json.Decode as Decode
+import Task
+import Phosphor as Icon exposing (IconWeight(..))
+import Routes exposing (Route(..))
+import Url
+
+
+-- Data Types
+
+
+type RemoteData error data
+    = NotAsked
+    | Loading
+    | Success data
+    | Failure error
+
+
+type alias Repository =
+    { id : Int
+    , name : String
+    , description : Maybe String
+    , htmlUrl : String
+    , language : Maybe String
+    , stargazersCount : Int
+    , topics : List String
+    , updatedAt : String
+    }
+
+
+type alias User =
+    { login : String
+    , name : Maybe String
+    , avatarUrl : String
+    , bio : Maybe String
+    }
+
+
+type SortOption
+    = SortByStars
+    | SortByUpdated
+    | SortByName
+
+
+type alias Toast =
+    { id : Int
+    , message : String
+    , toastType : ToastType
+    }
+
+
+type ToastType
+    = ToastSuccess
+    | ToastError
+    | ToastInfo
+
+
+type alias Model =
+    { key : Nav.Key
+    , url : Url.Url
+    , route : Route
+    , username : String
+    , repositories : RemoteData Http.Error (List Repository)
+    , user : RemoteData Http.Error User
+    , selectedTopics : List String
+    , searchQuery : String
+    , sortBy : SortOption
+    , accumulatedRepos : List Repository
+    , nextPageUrl : Maybe String
+    , theme : String
+    , toasts : List Toast
+    , nextToastId : Int
+    }
+
+
+type alias MenuItem =
+    { label : String
+    , route : Route
+    , icon : Icon.Icon
+    }
+
+
+type Msg
+    = NoOp
+    | JSReady
+    | LinkClicked Browser.UrlRequest
+    | UrlChanged Url.Url
+    | UsernameChanged String
+    | SearchRepositories String
+    | FetchUser String
+    | UserFetched (Result Http.Error User)
+    | FetchRepositories String
+    | RepositoriesFetchedRaw String (Result Http.Error String)
+    | RepositoriesFetched (Result Http.Error (List Repository))
+    | ToggleTopic String
+    | ClearTopics
+    | ChangeSort SortOption
+    | NavigateToRepositories String
+    | ToggleTheme
+    | AddToast String ToastType
+    | RemoveToast Int
+
+
+
+-- Menu Data
+
+
+navigationItems : List MenuItem
+navigationItems =
+    [ { label = "Dashboard", route = Home, icon = Icon.house }
+    , { label = "Settings", route = Settings, icon = Icon.gear }
+    ]
+
+
+userActionItems : List MenuItem
+userActionItems =
+    [ { label = "Settings", route = Settings, icon = Icon.gear }
+    ]
+
+
+
+-- HTTP Functions
+
+
+fetchUser : String -> Cmd Msg
+fetchUser username =
+    Http.get
+        { url = "https://api.github.com/users/" ++ username
+        , expect = Http.expectJson UserFetched userDecoder
+        }
+
+
+fetchRepositories : String -> Cmd Msg
+fetchRepositories username =
+    Http.get
+        { url = "https://api.github.com/users/" ++ username ++ "/starred?per_page=100"
+        , expect = Http.expectString (RepositoriesFetchedRaw username)
+        }
+
+
+fetchNextPage : String -> String -> Cmd Msg
+fetchNextPage username nextUrl =
+    Http.get
+        { url = nextUrl
+        , expect = Http.expectString (RepositoriesFetchedRaw username)
+        }
+
+
+userDecoder : Decode.Decoder User
+userDecoder =
+    Decode.map4 User
+        (Decode.field "login" Decode.string)
+        (Decode.maybe (Decode.field "name" Decode.string))
+        (Decode.field "avatar_url" Decode.string)
+        (Decode.maybe (Decode.field "bio" Decode.string))
+
+
+repositoryDecoder : Decode.Decoder Repository
+repositoryDecoder =
+    Decode.map8 Repository
+        (Decode.field "id" Decode.int)
+        (Decode.field "name" Decode.string)
+        (Decode.maybe (Decode.field "description" Decode.string))
+        (Decode.field "html_url" Decode.string)
+        (Decode.maybe (Decode.field "language" Decode.string))
+        (Decode.field "stargazers_count" Decode.int)
+        (Decode.field "topics" (Decode.list Decode.string))
+        (Decode.field "updated_at" Decode.string)
+
+
+
+-- Helper Functions
+
+
+getAllTopics : List Repository -> List String
+getAllTopics repos =
+    repos
+        |> List.concatMap .topics
+        |> unique
+
+
+getTopicCounts : List Repository -> List String -> List (String, Int)
+getTopicCounts repos topics =
+    topics
+        |> List.map (\topic -> (topic, countTopicOccurrences repos topic))
+
+
+countTopicOccurrences : List Repository -> String -> Int
+countTopicOccurrences repos topic =
+    repos
+        |> List.filter (\repo -> List.member topic repo.topics)
+        |> List.length
+
+
+filterAndSortRepos : Model -> List Repository -> List Repository
+filterAndSortRepos model repos =
+    repos
+        |> filterByTopics model.selectedTopics
+        |> filterBySearch model.searchQuery
+        |> sortRepos model.sortBy
+
+
+filterByTopics : List String -> List Repository -> List Repository
+filterByTopics selectedTopics repos =
+    if List.isEmpty selectedTopics then
+        repos
+    else
+        repos
+            |> List.filter (\repo -> List.any (\topic -> List.member topic repo.topics) selectedTopics)
+
+
+filterBySearch : String -> List Repository -> List Repository
+filterBySearch query repos =
+    if String.isEmpty (String.trim query) then
+        repos
+    else
+        let
+            lowerQuery = String.toLower query
+        in
+        repos
+            |> List.filter (\repo ->
+                String.contains lowerQuery (String.toLower repo.name) ||
+                (repo.description |> Maybe.map (String.toLower >> String.contains lowerQuery) |> Maybe.withDefault False)
+            )
+
+
+sortRepos : SortOption -> List Repository -> List Repository
+sortRepos sortOption repos =
+    case sortOption of
+        SortByStars ->
+            List.sortBy (.stargazersCount >> negate) repos
+        SortByUpdated ->
+            List.sortBy (.updatedAt >> String.toLower) repos
+        SortByName ->
+            List.sortBy (.name >> String.toLower) repos
+
+
+stringToSortOption : String -> SortOption
+stringToSortOption str =
+    case str of
+        "stars" -> SortByStars
+        "updated" -> SortByUpdated
+        "name" -> SortByName
+        _ -> SortByStars
+
+
+errorToString : Http.Error -> String
+errorToString error =
+    case error of
+        Http.BadUrl url ->
+            "Bad URL: " ++ url
+        Http.Timeout ->
+            "Request timed out"
+        Http.NetworkError ->
+            "Network error"
+        Http.BadStatus status ->
+            "Bad status: " ++ String.fromInt status
+        Http.BadBody body ->
+            "Bad body: " ++ body
+
+
+formatDate : String -> String
+formatDate dateString =
+    -- Simple date formatting, could be enhanced
+    String.left 10 dateString
+
+
+unique : List a -> List a
+unique list =
+    uniqueHelper [] list
+
+
+uniqueHelper : List a -> List a -> List a
+uniqueHelper seen remaining =
+    case remaining of
+        [] ->
+            List.reverse seen
+        x :: xs ->
+            if List.member x seen then
+                uniqueHelper seen xs
+            else
+                uniqueHelper (x :: seen) xs
+
+
+
+-- Menu Helpers
+
+
+viewMenuItem : Route -> MenuItem -> Html Msg
+viewMenuItem currentRoute item =
+    let
+        isActive : Bool
+        isActive =
+            currentRoute == item.route
+
+        activeClass : String
+        activeClass =
+            if isActive then
+                "menu-active"
+
+            else
+                ""
+    in
+    li [] [ a [ href (Routes.toString item.route), class activeClass ] [ item.icon Regular |> Icon.toHtml [], text item.label ] ]
+
+
+viewMenuItemTextOnly : Route -> MenuItem -> Html Msg
+viewMenuItemTextOnly currentRoute item =
+    let
+        isActive : Bool
+        isActive =
+            currentRoute == item.route
+
+        activeClass : String
+        activeClass =
+            if isActive then
+                "menu-active"
+
+            else
+                ""
+    in
+    li [] [ a [ href (Routes.toString item.route), class activeClass ] [ text item.label ] ]
+
+
+main : Program IO.Flags Model Msg
+main =
+    Browser.application
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        , onUrlRequest = LinkClicked
+        , onUrlChange = UrlChanged
+        }
+
+
+init : IO.Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
+init _ url key =
+    let
+        route = Routes.fromUrl url
+        initialUsername = case route of
+            Repositories username -> username
+            _ -> ""
+    in
+    ( { key = key
+      , url = url
+      , route = route
+      , username = initialUsername
+      , repositories = NotAsked
+      , user = NotAsked
+      , selectedTopics = []
+      , searchQuery = ""
+      , sortBy = SortByStars
+      , accumulatedRepos = []
+      , nextPageUrl = Nothing
+      , theme = "light"
+      , toasts = []
+      , nextToastId = 1
+      }
+    , IO.fromElm IO.ElmReady
+    )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    IO.toElm
+        |> Sub.map
+            (\result ->
+                case result of
+                    Ok data ->
+                        case data of
+                            IO.JSReady ->
+                                JSReady
+
+                    Err _ ->
+                        NoOp
+            )
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        NoOp ->
+            ( model, Cmd.none )
+
+        JSReady ->
+            ( model, Cmd.none )
+
+        LinkClicked urlRequest ->
+            case urlRequest of
+                Browser.Internal url ->
+                    ( model, Nav.pushUrl model.key (Url.toString url) )
+
+                Browser.External href ->
+                    ( model, Nav.load href )
+
+        UrlChanged url ->
+            let
+                newRoute = Routes.fromUrl url
+                newUsername = case newRoute of
+                    Repositories username -> username
+                    _ -> model.username
+                cmds = case newRoute of
+                    Repositories username ->
+                        Cmd.batch [ fetchUser username, fetchRepositories username ]
+                    _ -> Cmd.none
+            in
+            ( { model | url = url, route = newRoute, username = newUsername }, cmds )
+
+        UsernameChanged username ->
+            ( { model | username = username }, Cmd.none )
+
+        SearchRepositories query ->
+            ( { model | searchQuery = query }, Cmd.none )
+
+        FetchUser username ->
+            ( { model | user = Loading }, fetchUser username )
+
+        UserFetched result ->
+            case result of
+                Ok user ->
+                    ( { model | user = Success user }
+                    , Task.perform (\_ -> AddToast ("Loaded user @" ++ user.login) ToastInfo) (Task.succeed ())
+                    )
+                Err error ->
+                    ( { model | user = Failure error }
+                    , Task.perform (\_ -> AddToast ("Failed to load user: " ++ errorToString error) ToastError) (Task.succeed ())
+                    )
+
+        FetchRepositories username ->
+            ( { model | repositories = Loading }, fetchRepositories username )
+
+        RepositoriesFetchedRaw username result ->
+            case result of
+                Ok jsonString ->
+                    case Decode.decodeString (Decode.list repositoryDecoder) jsonString of
+                        Ok repos ->
+                            ( { model | repositories = Success repos }
+                            , Task.perform (\_ -> AddToast ("Loaded " ++ String.fromInt (List.length repos) ++ " repositories") ToastSuccess) (Task.succeed ())
+                            )
+                        Err decodeError ->
+                            ( { model | repositories = Failure (Http.BadBody (Decode.errorToString decodeError)) }
+                            , Task.perform (\_ -> AddToast "Failed to parse repository data" ToastError) (Task.succeed ())
+                            )
+                Err error ->
+                    ( { model | repositories = Failure error }
+                    , Task.perform (\_ -> AddToast ("Failed to load repositories: " ++ errorToString error) ToastError) (Task.succeed ())
+                    )
+
+        RepositoriesFetched result ->
+            case result of
+                Ok repos ->
+                    ( { model | repositories = Success repos }, Cmd.none )
+                Err error ->
+                    ( { model | repositories = Failure error }, Cmd.none )
+
+        ToggleTopic topic ->
+            let
+                newSelectedTopics =
+                    if List.member topic model.selectedTopics then
+                        List.filter (\t -> t /= topic) model.selectedTopics
+                    else
+                        topic :: model.selectedTopics
+            in
+            ( { model | selectedTopics = newSelectedTopics }, Cmd.none )
+
+        ClearTopics ->
+            ( { model | selectedTopics = [] }, Cmd.none )
+
+        ChangeSort sortOption ->
+            ( { model | sortBy = sortOption }, Cmd.none )
+
+        NavigateToRepositories username ->
+            ( { model | user = Loading, repositories = Loading }
+            , Nav.pushUrl model.key (Routes.toString (Repositories username))
+            )
+
+        ToggleTheme ->
+            let
+                newTheme = if model.theme == "light" then "dark" else "light"
+            in
+            ( { model | theme = newTheme }, Cmd.none )
+
+        AddToast message toastType ->
+            let
+                newToast =
+                    { id = model.nextToastId
+                    , message = message
+                    , toastType = toastType
+                    }
+            in
+            ( { model
+                | toasts = newToast :: model.toasts
+                , nextToastId = model.nextToastId + 1
+              }
+            , Cmd.none
+            )
+
+        RemoveToast id ->
+            ( { model | toasts = List.filter (\toast -> toast.id /= id) model.toasts }
+            , Cmd.none
+            )
+
+
+view : Model -> Browser.Document Msg
+view model =
+    { title = "GitHub Stars Browser"
+    , body = [ viewBody model ]
+    }
+
+
+viewBody : Model -> Html Msg
+viewBody model =
+    div [ class "min-h-screen flex flex-col" ]
+        [ viewNavbar model.route
+        , div [ class "flex flex-col flex-1" ]
+            [ div [ class "drawer lg:hidden" ]
+                [ input [ id "mobile-drawer", type_ "checkbox", class "drawer-toggle" ] []
+                , viewDrawerSide model.route
+                ]
+            , div [ class "flex-1 container mx-auto p-4" ]
+                [ case model.route of
+                    Home ->
+                        viewHomePage model
+
+                    Repositories username ->
+                        viewRepositoriesPage model
+
+                    Settings ->
+                        viewSettings "Settings"
+                ]
+            ]
+        , viewFooter
+        , viewToasts model.toasts
+        ]
+
+
+viewNavbar : Route -> Html Msg
+viewNavbar currentRoute =
+    div [ class "navbar bg-base-100 shadow-lg w-full sticky top-0 z-50" ]
+        [ div [ class "flex-none lg:hidden" ]
+            [ label [ for "mobile-drawer", attribute "aria-label" "open sidebar", class "btn btn-square btn-ghost" ]
+                [ Icon.list Regular |> Icon.toHtml []
+                ]
+            ]
+        , div [ class "flex-1 px-2 mx-2" ]
+            [ a [ href (Routes.toString Home), class "btn btn-ghost normal-case text-xl font-bold" ]
+                [ Icon.star Regular |> Icon.withClass "w-6 h-6 text-primary" |> Icon.toHtml []
+                , text "GitHub Stars"
+                ]
+            ]
+        , div [ class "flex-none hidden lg:block" ]
+            [ ul [ class "menu menu-horizontal px-1" ]
+                (List.map (viewMenuItemTextOnly currentRoute) navigationItems)
+            ]
+        , div [ class "flex-none" ]
+            [ button
+                [ onClick ToggleTheme
+                , class "btn btn-ghost btn-circle"
+                , attribute "aria-label" "toggle theme"
+                ]
+                [ Icon.sun Regular |> Icon.withClass "w-5 h-5 swap-on" |> Icon.toHtml []
+                , Icon.moon Regular |> Icon.withClass "w-5 h-5 swap-off" |> Icon.toHtml []
+                ]
+            , div [ class "dropdown dropdown-end" ]
+                [ div [ attribute "tabindex" "0", attribute "role" "button", class "btn btn-ghost btn-circle avatar" ]
+                    [ div [ class "w-8 rounded-full" ]
+                        [ Icon.userCircle Regular |> Icon.withClass "w-8 h-8" |> Icon.toHtml []
+                        ]
+                    ]
+                , ul [ attribute "tabindex" "0", class "menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-52 p-2 shadow-lg" ]
+                    (List.map (viewMenuItemTextOnly currentRoute) userActionItems)
+                ]
+            ]
+        ]
+
+
+viewDrawerSide : Route -> Html Msg
+viewDrawerSide currentRoute =
+    div [ class "drawer-side" ]
+        [ label [ for "mobile-drawer", attribute "aria-label" "close sidebar", class "drawer-overlay" ] []
+        , ul [ class "menu bg-base-200 text-base-content min-h-full w-80 p-4" ]
+            (List.concat
+                [ [ -- User Info Section
+                    li [ class "mb-4" ]
+                        [ div [ class "flex items-center gap-3 px-3 py-2" ]
+                            [ div [ class "avatar" ]
+                                [ div [ class "w-10 rounded-full" ]
+                                    [ Icon.userCircle Regular |> Icon.withClass "w-10 h-10" |> Icon.toHtml []
+                                    ]
+                                ]
+                            , div []
+                                [ div [ class "font-semibold" ] [ text "GitHub Stars" ]
+                                , div [ class "text-sm opacity-70" ] [ text "Explore repositories" ]
+                                ]
+                            ]
+                        ]
+                  , li [ class "menu-title" ] [ text "Navigation" ]
+                  ]
+                , List.map (viewMenuItem currentRoute) navigationItems
+                , [ li [ class "menu-title" ] [ text "Settings" ]
+                  , li []
+                      [ button [ onClick ToggleTheme, class "btn btn-ghost w-full justify-start" ]
+                          [ Icon.palette Regular |> Icon.toHtml []
+                          , text "Toggle Theme"
+                          ]
+                      ]
+                  , li [ class "menu-title" ] [ text "Account" ]
+                  ]
+                , List.map (viewMenuItem currentRoute) userActionItems
+                ]
+            )
+        ]
+
+
+viewHomePage : Model -> Html Msg
+viewHomePage model =
+    div [ class "min-h-screen bg-gradient-to-br from-base-100 to-base-200" ]
+        [ div [ class "hero min-h-screen" ]
+            [ div [ class "hero-overlay bg-opacity-60" ] []
+            , div [ class "hero-content text-center" ]
+                [ div [ class "max-w-md" ]
+                    [ div [ class "mb-8" ]
+                        [ Icon.star Regular |> Icon.withClass "w-20 h-20 mx-auto mb-6 text-primary animate-pulse" |> Icon.toHtml []
+                        , h1 [ class "text-5xl font-bold text-base-content mb-4" ] [ text "GitHub Stars" ]
+                        , p [ class "text-xl text-base-content/80 mb-2" ] [ text "Explore starred repositories" ]
+                        , p [ class "text-base-content/60" ] [ text "Discover amazing projects from GitHub users" ]
+                        ]
+                    , div [ class "card bg-base-100 shadow-2xl" ]
+                        [ div [ class "card-body" ]
+                            [ div [ class "form-control" ]
+                                [ label [ class "label" ]
+                                    [ span [ class "label-text" ] [ text "GitHub Username" ] ]
+                                , div [ class "join" ]
+                                    [ input
+                                        [ type_ "text"
+                                        , placeholder "e.g., octocat"
+                                        , value model.username
+                                        , onInput UsernameChanged
+                                        , class "input input-bordered join-item w-full"
+                                        ]
+                                        []
+                                    , button
+                                        [ onClick (NavigateToRepositories model.username)
+                                        , class "btn btn-primary join-item"
+                                        , Html.Attributes.disabled (String.isEmpty (String.trim model.username) || model.user == Loading || model.repositories == Loading)
+                                        ]
+                        [ case (model.user, model.repositories) of
+                            (Loading, _) ->
+                                div [ class "loading loading-spinner loading-md" ] []
+                            (_, Loading) ->
+                                div [ class "loading loading-spinner loading-md" ] []
+                            _ ->
+                                Icon.magnifyingGlass Regular |> Icon.toHtml []
+                        ]
+                                    ]
+                                ]
+                            , div [ class "divider" ] [ text "Popular Users" ]
+                            , div [ class "flex flex-wrap gap-2 justify-center" ]
+                                [ button [ onClick (NavigateToRepositories "torvalds"), class "btn btn-outline btn-sm" ] [ text "torvalds" ]
+                                , button [ onClick (NavigateToRepositories "gaearon"), class "btn btn-outline btn-sm" ] [ text "gaearon" ]
+                                , button [ onClick (NavigateToRepositories "tj"), class "btn btn-outline btn-sm" ] [ text "tj" ]
+                                , button [ onClick (NavigateToRepositories "sindresorhus"), class "btn btn-outline btn-sm" ] [ text "sindresorhus" ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+
+viewRepositoriesPage : Model -> Html Msg
+viewRepositoriesPage model =
+    div [ class "flex flex-col lg:flex-row min-h-screen" ]
+        [ viewSidebar model
+        , div [ class "flex-1 flex flex-col" ]
+            [ viewHeader model
+            , viewContent model
+            ]
+        ]
+
+
+viewSidebar : Model -> Html Msg
+viewSidebar model =
+    div [ class "w-full lg:w-80 bg-base-200 p-4 lg:min-h-screen lg:sticky lg:top-20" ]
+        [ div [ class "mb-6" ]
+            [ div [ class "flex items-center justify-between mb-4" ]
+                [ h2 [ class "text-lg font-semibold flex items-center gap-2" ]
+                    [ Icon.tag Regular |> Icon.toHtml []
+                    , text "Topics"
+                    ]
+                , if not (List.isEmpty model.selectedTopics) then
+                    button
+                        [ onClick ClearTopics
+                        , class "btn btn-xs btn-outline btn-error"
+                        ]
+                        [ text "Clear" ]
+                  else
+                    text ""
+                ]
+            , if not (List.isEmpty model.selectedTopics) then
+                div [ class "flex flex-wrap gap-1 mb-4" ]
+                    (List.map viewSelectedTopicChip model.selectedTopics)
+              else
+                text ""
+            ]
+        , div [ class "space-y-2 max-h-96 overflow-y-auto" ]
+            (case model.repositories of
+                Loading ->
+                    List.repeat 8 viewTopicSkeleton
+
+                Success repos ->
+                    let
+                        allTopics = getAllTopics repos
+                        topicCounts = getTopicCounts repos allTopics
+                    in
+                    List.map (viewTopicFilter model.selectedTopics) (List.sortBy Tuple.first topicCounts)
+
+                _ ->
+                    [ div [ class "text-center py-8 text-base-content/60" ]
+                        [ Icon.tag Regular |> Icon.withClass "w-8 h-8 mx-auto mb-2" |> Icon.toHtml []
+                        , text "No topics available"
+                        ]
+                    ]
+            )
+        ]
+
+
+viewTopicChip : String -> Html Msg
+viewTopicChip topic =
+    div [ class "badge badge-primary gap-2" ]
+        [ text topic
+        , button [ onClick (ToggleTopic topic), class "btn btn-xs btn-circle btn-ghost" ] [ text "×" ]
+        ]
+
+
+viewTopicFilter : List String -> (String, Int) -> Html Msg
+viewTopicFilter selectedTopics (topic, count) =
+    let
+        isSelected = List.member topic selectedTopics
+        buttonClass = if isSelected then "btn-primary" else "btn-ghost"
+    in
+    button
+        [ onClick (ToggleTopic topic)
+        , class ("btn btn-sm w-full justify-start " ++ buttonClass)
+        ]
+        [ text topic
+        , div [ class "badge badge-xs ml-auto" ] [ text (String.fromInt count) ]
+        ]
+
+
+viewSelectedTopicChip : String -> Html Msg
+viewSelectedTopicChip topic =
+    div [ class "badge badge-primary gap-1" ]
+        [ text topic
+        , button
+            [ onClick (ToggleTopic topic)
+            , class "btn btn-xs btn-circle btn-ghost"
+            , attribute "aria-label" ("Remove " ++ topic ++ " filter")
+            ]
+            [ text "×" ]
+        ]
+
+
+viewTopicSkeleton : Html Msg
+viewTopicSkeleton =
+    div [ class "flex items-center gap-2 p-2" ]
+        [ div [ class "w-4 h-4 bg-base-300 rounded animate-pulse" ] []
+        , div [ class "flex-1 h-4 bg-base-300 rounded animate-pulse" ] []
+        , div [ class "w-8 h-4 bg-base-300 rounded animate-pulse" ] []
+        ]
+
+
+viewHeader : Model -> Html Msg
+viewHeader model =
+    div [ class "bg-base-100 border-b p-4" ]
+        [ div [ class "breadcrumbs mb-4" ]
+            [ ul []
+                [ li [] [ a [ href (Routes.toString Home) ] [ Icon.house Regular |> Icon.toHtml [], text "Home" ] ]
+                , li [] [ text "Repositories" ]
+                , li [] [ text model.username ]
+                ]
+            ]
+        , div [ class "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4" ]
+            [ div [ class "flex items-center gap-4" ]
+                [ case model.user of
+                    Success user ->
+                        div [ class "flex items-center gap-3" ]
+                            [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-12 h-12 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
+                            , div []
+                                [ div [ class "font-semibold text-lg" ] [ text (Maybe.withDefault user.login user.name) ]
+                                , div [ class "text-sm text-base-content/70" ] [ text ("@" ++ user.login) ]
+                                , case user.bio of
+                                    Just bio ->
+                                        div [ class "text-sm text-base-content/60 mt-1" ] [ text bio ]
+                                    Nothing ->
+                                        text ""
+                                ]
+                            ]
+
+                    Loading ->
+                        div [ class "flex items-center gap-3" ]
+                            [ div [ class "w-12 h-12 rounded-full bg-base-300 animate-pulse" ] []
+                            , div [ class "space-y-1" ]
+                                [ div [ class "h-5 bg-base-300 rounded animate-pulse w-32" ] []
+                                , div [ class "h-4 bg-base-300 rounded animate-pulse w-20" ] []
+                                , div [ class "h-3 bg-base-300 rounded animate-pulse w-24" ] []
+                                ]
+                            ]
+
+                    _ ->
+                        div [ class "flex items-center gap-3" ]
+                            [ Icon.user Regular |> Icon.withClass "w-12 h-12" |> Icon.toHtml []
+                            , div [ class "text-base-content/70" ] [ text "Loading user..." ]
+                            ]
+                ]
+            , div [ class "flex flex-col sm:flex-row gap-4" ]
+                [ div [ class "form-control" ]
+                    [ label [ class "label" ] [ span [ class "label-text" ] [ text "Search" ] ]
+                    , input
+                        [ type_ "text"
+                        , placeholder "Search repositories..."
+                        , value model.searchQuery
+                        , onInput SearchRepositories
+                        , class "input input-bordered"
+                        ]
+                        []
+                    ]
+                , div [ class "form-control" ]
+                    [ label [ class "label" ] [ span [ class "label-text" ] [ text "Sort by" ] ]
+                    , select
+                        [ onInput (\value -> ChangeSort (stringToSortOption value))
+                        , class "select select-bordered"
+                        ]
+                        [ option [ value "stars", Html.Attributes.selected (model.sortBy == SortByStars) ] [ text "⭐ Stars" ]
+                        , option [ value "updated", Html.Attributes.selected (model.sortBy == SortByUpdated) ] [ text "📅 Updated" ]
+                        , option [ value "name", Html.Attributes.selected (model.sortBy == SortByName) ] [ text "🔤 Name" ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+
+viewContent : Model -> Html Msg
+viewContent model =
+    div [ class "flex-1 p-4" ]
+        [ case model.repositories of
+            NotAsked ->
+                div [ class "text-center py-12" ]
+                    [ Icon.star Regular |> Icon.withClass "w-16 h-16 mx-auto mb-4 text-base-content/50" |> Icon.toHtml []
+                    , text "Enter a username to view starred repositories"
+                    ]
+
+            Loading ->
+                div [ class "space-y-6" ]
+                    [ div [ class "mb-6" ]
+                        [ div [ class "stats stats-vertical lg:stats-horizontal shadow" ]
+                            [ div [ class "stat" ]
+                                [ div [ class "stat-title" ] [ text "Total Repositories" ]
+                                , div [ class "stat-value" ]
+                                    [ div [ class "loading loading-spinner loading-sm" ] [] ]
+                                , div [ class "stat-desc" ] [ text "Loading..." ]
+                                ]
+                            , div [ class "stat" ]
+                                [ div [ class "stat-title" ] [ text "Filtered Results" ]
+                                , div [ class "stat-value" ]
+                                    [ div [ class "loading loading-spinner loading-sm" ] [] ]
+                                , div [ class "stat-desc" ] [ text "Processing..." ]
+                                ]
+                            ]
+                        ]
+                    , div [ class "text-center py-8" ]
+                        [ div [ class "loading loading-spinner loading-xl text-primary" ] []
+                        , div [ class "mt-4 text-lg font-medium" ] [ text "Loading repositories..." ]
+                        , div [ class "mt-2 text-sm text-base-content/60" ] [ text "Fetching starred repositories from GitHub" ]
+                        ]
+                    , div [ class "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" ]
+                        (List.repeat 6 viewRepositorySkeleton)
+                    ]
+
+            Failure error ->
+                div [ class "alert alert-error" ]
+                    [ Icon.exclamationMark Regular |> Icon.toHtml []
+                    , div []
+                        [ div [ class "font-semibold" ] [ text "Error loading repositories" ]
+                        , div [] [ text (errorToString error) ]
+                        ]
+                    ]
+
+            Success repos ->
+                let
+                    filteredRepos = filterAndSortRepos model repos
+                    totalCount = List.length repos
+                    filteredCount = List.length filteredRepos
+                in
+                div []
+                    [ div [ class "mb-6" ]
+                        [ div [ class "stats stats-vertical lg:stats-horizontal shadow" ]
+                            [ div [ class "stat" ]
+                                [ div [ class "stat-title" ] [ text "Total Repositories" ]
+                                , div [ class "stat-value" ] [ text (String.fromInt totalCount) ]
+                                , div [ class "stat-desc" ] [ text "Starred by user" ]
+                                ]
+                            , div [ class "stat" ]
+                                [ div [ class "stat-title" ] [ text "Filtered Results" ]
+                                , div [ class "stat-value" ] [ text (String.fromInt filteredCount) ]
+                                , div [ class "stat-desc" ]
+                                    [ text
+                                        (if totalCount == filteredCount then
+                                            "No filters applied"
+                                         else
+                                            String.fromInt (totalCount - filteredCount) ++ " hidden"
+                                        )
+                                    ]
+                                ]
+                            , if not (List.isEmpty model.selectedTopics) then
+                                div [ class "stat" ]
+                                    [ div [ class "stat-title" ] [ text "Active Filters" ]
+                                    , div [ class "stat-value" ] [ text (String.fromInt (List.length model.selectedTopics)) ]
+                                    , div [ class "stat-desc" ] [ text "Topics selected" ]
+                                    ]
+                              else
+                                text ""
+                            ]
+                        ]
+                    , div [ class "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" ]
+                        (List.map viewRepositoryCard filteredRepos)
+                    ]
+        ]
+
+
+viewRepositoryCard : Repository -> Html Msg
+viewRepositoryCard repo =
+    div [ class "card bg-base-100 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 border border-base-300" ]
+        [ div [ class "card-body" ]
+            [ div [ class "flex items-start justify-between mb-2" ]
+                [ div [ class "card-title text-lg" ]
+                    [ Html.a
+                        [ Html.Attributes.href repo.htmlUrl
+                        , Html.Attributes.target "_blank"
+                        , Html.Attributes.rel "noopener noreferrer"
+                        , class "link link-primary hover:link-accent"
+                        ]
+                        [ text repo.name ]
+                    ]
+                , div [ class "flex items-center gap-1 text-sm text-base-content/60" ]
+                    [ Icon.star Regular |> Icon.withClass "w-4 h-4 text-warning" |> Icon.toHtml []
+                    , text (String.fromInt repo.stargazersCount)
+                    ]
+                ]
+            , case repo.description of
+                Just desc ->
+                    p [ class "text-sm text-base-content/80 mb-4 line-clamp-2" ] [ text desc ]
+                Nothing ->
+                    text ""
+            , div [ class "flex flex-wrap gap-1 mb-4" ]
+                (List.map (\topic -> div [ class "badge badge-primary badge-sm" ] [ text topic ]) repo.topics)
+            , div [ class "flex items-center justify-between" ]
+                [ case repo.language of
+                    Just lang ->
+                        div [ class "flex items-center gap-2" ]
+                            [ div [ class "w-3 h-3 rounded-full bg-primary" ] []
+                            , span [ class "text-sm font-medium" ] [ text lang ]
+                            ]
+                    Nothing ->
+                        text ""
+                , div [ class "text-xs text-base-content/60" ]
+                    [ text ("Updated " ++ formatDate repo.updatedAt) ]
+                ]
+            , div [ class "card-actions justify-end mt-4" ]
+                [ Html.a
+                    [ Html.Attributes.href repo.htmlUrl
+                    , Html.Attributes.target "_blank"
+                    , Html.Attributes.rel "noopener noreferrer"
+                    , class "btn btn-primary btn-sm"
+                    ]
+                    [ text "View on GitHub"
+                    , Icon.arrowSquareOut Regular |> Icon.toHtml []
+                    ]
+                ]
+            ]
+        ]
+
+
+viewRepositorySkeleton : Html Msg
+viewRepositorySkeleton =
+    div [ class "card bg-base-100 shadow-xl animate-pulse border border-base-300" ]
+        [ div [ class "card-body" ]
+            [ div [ class "flex items-start justify-between mb-2" ]
+                [ div [ class "h-6 bg-base-300 rounded w-3/4" ] []
+                , div [ class "flex items-center gap-1" ]
+                    [ Icon.star Regular |> Icon.withClass "w-4 h-4 text-base-300" |> Icon.toHtml []
+                    , div [ class "h-4 bg-base-300 rounded w-8" ] []
+                    ]
+                ]
+            , div [ class "space-y-2 mb-4" ]
+                [ div [ class "h-4 bg-base-300 rounded w-full" ] []
+                , div [ class "h-4 bg-base-300 rounded w-2/3" ] []
+                ]
+            , div [ class "flex flex-wrap gap-1 mb-4" ]
+                (List.repeat 3 (div [ class "badge h-5 w-16 bg-base-300" ] []))
+            , div [ class "flex items-center justify-between" ]
+                [ div [ class "flex items-center gap-2" ]
+                    [ div [ class "w-3 h-3 bg-base-300 rounded-full" ] []
+                    , div [ class "h-4 bg-base-300 rounded w-12" ] []
+                    ]
+                , div [ class "h-3 bg-base-300 rounded w-20" ] []
+                ]
+            , div [ class "card-actions justify-end mt-4" ]
+                [ div [ class "btn btn-primary btn-sm w-24 bg-base-300" ] [] ]
+            ]
+        ]
+
+
+viewSettings : String -> Html Msg
+viewSettings title =
+    div [ class "flex flex-col gap-6" ]
+        [ div [ class "card bg-base-100 shadow-xl" ]
+            [ div [ class "card-body" ]
+                [ div [ class "card-title" ] [ Icon.gear Regular |> Icon.toHtml [], text title ]
+                , div [] [ text "Manage your application settings" ]
+                , div [ class "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4" ]
+                    [ div [ class "card bg-base-200" ]
+                        [ div [ class "card-body" ]
+                            [ div [ class "card-title text-sm" ] [ text "Notifications" ]
+                            , div [ class "form-control" ]
+                                [ label [ class "label cursor-pointer" ]
+                                    [ text "Email notifications"
+                                    , input [ type_ "checkbox", class "toggle toggle-primary" ] []
+                                    ]
+                                ]
+                            ]
+                        ]
+                    , div [ class "card bg-base-200" ]
+                        [ div [ class "card-body" ]
+                            [ div [ class "card-title text-sm" ] [ text "Theme" ]
+                            , div [ class "form-control" ]
+                                [ label [ class "label cursor-pointer" ]
+                                    [ text "Dark mode"
+                                    , input [ type_ "checkbox", class "toggle toggle-primary" ] []
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                , div [ class "card-actions justify-end" ]
+                    [ button [ class "btn btn-ghost" ] [ text "Reset" ]
+                    , button [ class "btn btn-primary" ] [ text "Save Changes" ]
+                    ]
+                ]
+            ]
+        ]
+
+
+viewFooter : Html Msg
+viewFooter =
+    footer [ class "footer footer-center bg-base-200 text-base-content p-10" ]
+        [ div [ class "grid grid-flow-col gap-4" ]
+            [ a [ class "link link-hover" ] [ text "About" ]
+            , a [ class "link link-hover" ] [ text "Contact" ]
+            , a [ class "link link-hover" ] [ text "Jobs" ]
+            , a [ class "link link-hover" ] [ text "Press kit" ]
+            ]
+        , div []
+            [ p [] [ text "GitHub Stars Browser - Built with Elm and DaisyUI" ]
+            , p [] [ text "© 2024 - All rights reserved" ]
+            ]
+        , div [ class "grid grid-flow-col gap-4" ]
+            [ a [ href "https://github.com", Html.Attributes.target "_blank", Html.Attributes.rel "noopener noreferrer" ]
+                [ Icon.githubLogo Regular |> Icon.withClass "w-6 h-6" |> Icon.toHtml [] ]
+            , a [ href "https://twitter.com", Html.Attributes.target "_blank", Html.Attributes.rel "noopener noreferrer" ]
+                [ Icon.twitterLogo Regular |> Icon.withClass "w-6 h-6" |> Icon.toHtml [] ]
+            , a [ href "https://elm-lang.org", Html.Attributes.target "_blank", Html.Attributes.rel "noopener noreferrer" ]
+                [ Icon.code Regular |> Icon.withClass "w-6 h-6" |> Icon.toHtml [] ]
+            ]
+        ]
+
+
+viewToasts : List Toast -> Html Msg
+viewToasts toasts =
+    div [ class "toast toast-top toast-end z-[100]" ]
+        (List.map viewToast toasts)
+
+
+viewToast : Toast -> Html Msg
+viewToast toast =
+    div [ class ("alert " ++ toastTypeToClass toast.toastType) ]
+        [ case toast.toastType of
+            ToastSuccess ->
+                Icon.checkCircle Regular |> Icon.toHtml []
+            ToastError ->
+                Icon.exclamationMark Regular |> Icon.toHtml []
+            ToastInfo ->
+                Icon.info Regular |> Icon.toHtml []
+        , span [] [ text toast.message ]
+        , button
+            [ onClick (RemoveToast toast.id)
+            , class "btn btn-sm btn-circle btn-ghost"
+            , attribute "aria-label" "Close toast"
+            ]
+            [ text "✕" ]
+        ]
+
+
+toastTypeToClass : ToastType -> String
+toastTypeToClass toastType =
+    case toastType of
+        ToastSuccess ->
+            "alert-success"
+        ToastError ->
+            "alert-error"
+        ToastInfo ->
+            "alert-info"
