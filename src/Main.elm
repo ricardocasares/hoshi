@@ -2,9 +2,9 @@ module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Toast,
 
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, a, button, div, footer, h1, h2, input, label, li, option, p, select, span, text, ul)
+import Html exposing (Html, a, button, div, footer, form, h1, h2, input, label, li, option, p, select, span, text, ul)
 import Html.Attributes exposing (attribute, class, for, href, id, placeholder, type_, value)
-import Html.Events exposing (onClick, onInput)
+import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import InteropDefinitions as IO
 import InteropPorts as IO
@@ -476,7 +476,7 @@ update msg model =
                 Browser.Internal url ->
                     case Routes.fromUrl url of
                         Repositories username ->
-                            ( model, Cmd.batch [ fetchUser username, fetchRepositories username, Nav.pushUrl model.key (Url.toString url) ] )
+                            ( { model | user = Loading, repositories = Loading }, Cmd.batch [ fetchUser username, fetchRepositories username, Nav.pushUrl model.key (Url.toString url) ] )
 
                         _ ->
                             ( model, Nav.pushUrl model.key (Url.toString url) )
@@ -546,7 +546,7 @@ update msg model =
 
         NavigateToRepositories username ->
             ( { model | user = Loading, repositories = Loading }
-            , Nav.pushUrl model.key (Routes.toString (Repositories username))
+            , Cmd.batch [ fetchUser username, fetchRepositories username, Nav.pushUrl model.key (Routes.toString (Repositories username)) ]
             )
 
         ToggleTheme ->
@@ -695,8 +695,8 @@ viewDrawerSide currentRoute =
 viewHomePage : Model -> Html Msg
 viewHomePage model =
     div [ class "flex flex-col items-center justify-center" ]
-        [ div [ class "flex-1" ]
-            [ label [ class "input input-xl" ]
+        [ form [ onSubmit (NavigateToRepositories model.username) ]
+            [ div [ class "input input-xl" ]
                 [ Icon.magnifyingGlass Bold |> Icon.toHtml []
                 , input
                     [ type_ "text"
@@ -876,7 +876,6 @@ viewHeader model =
                             , div [ class "space-y-1" ]
                                 [ div [ class "h-5 bg-base-300 rounded animate-pulse w-32" ] []
                                 , div [ class "h-4 bg-base-300 rounded animate-pulse w-20" ] []
-                                , div [ class "h-3 bg-base-300 rounded animate-pulse w-24" ] []
                                 ]
                             ]
 
