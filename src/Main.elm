@@ -100,7 +100,7 @@ type Msg
     | SearchRepositories String
     | UpdateTopicSearch String
     | UserFetched (Result Http.Error User)
-    | RepositoriesFetchedRaw String (Result Http.Error String)
+    | RepositoriesFetched (Result Http.Error String)
     | ToggleTopic String
     | ClearTopics
     | ChangeSort SortOption
@@ -143,7 +143,7 @@ fetchRepositories : String -> Cmd Msg
 fetchRepositories username =
     Http.get
         { url = "https://api.github.com/users/" ++ username ++ "/starred?per_page=100"
-        , expect = Http.expectString (RepositoriesFetchedRaw username)
+        , expect = Http.expectString RepositoriesFetched
         }
 
 
@@ -396,20 +396,28 @@ init _ url key =
         route =
             Routes.fromUrl url
 
-        initialUsername =
+        initialData =
             case route of
                 Repositories username ->
-                    username
+                    { username = username
+                    , user = Loading
+                    , repositories = Loading
+                    , cmd = Cmd.batch [ fetchUser username, fetchRepositories username ]
+                    }
 
                 _ ->
-                    ""
+                    { username = ""
+                    , user = NotAsked
+                    , repositories = NotAsked
+                    , cmd = Cmd.none
+                    }
     in
     ( { key = key
       , url = url
       , route = route
-      , username = initialUsername
-      , repositories = NotAsked
-      , user = NotAsked
+      , username = initialData.username
+      , repositories = initialData.repositories
+      , user = initialData.user
       , selectedTopics = []
       , searchQuery = ""
       , topicSearchQuery = ""
@@ -420,7 +428,7 @@ init _ url key =
       , toasts = []
       , nextToastId = 1
       }
-    , IO.fromElm IO.ElmReady
+    , Cmd.batch [ IO.fromElm IO.ElmReady, initialData.cmd ]
     )
 
 
@@ -447,7 +455,21 @@ update msg model =
             ( model, Cmd.none )
 
         JSReady ->
-            ( model, Cmd.none )
+            let
+                cmd : Cmd Msg
+                cmd =
+                    case model.route of
+                        Repositories username ->
+                            if model.repositories == NotAsked && model.user == NotAsked then
+                                Cmd.batch [ fetchUser username, fetchRepositories username ]
+
+                            else
+                                Cmd.none
+
+                        _ ->
+                            Cmd.none
+            in
+            ( model, cmd )
 
         LinkClicked urlRequest ->
             case urlRequest of
@@ -493,7 +515,7 @@ update msg model =
             case result of
                 Ok user ->
                     ( { model | user = Success user }
-                    , Task.perform (\_ -> AddToast ("Loaded user @" ++ user.login) ToastInfo) (Task.succeed ())
+                    , Cmd.none
                     )
 
                 Err error ->
@@ -501,13 +523,13 @@ update msg model =
                     , Task.perform (\_ -> AddToast ("Failed to load user: " ++ errorToString error) ToastError) (Task.succeed ())
                     )
 
-        RepositoriesFetchedRaw _ result ->
+        RepositoriesFetched result ->
             case result of
                 Ok jsonString ->
                     case Decode.decodeString (Decode.list repositoryDecoder) jsonString of
                         Ok repos ->
                             ( { model | repositories = Success repos }
-                            , Task.perform (\_ -> AddToast ("Loaded " ++ String.fromInt (List.length repos) ++ " repositories") ToastSuccess) (Task.succeed ())
+                            , Cmd.none
                             )
 
                         Err decodeError ->
