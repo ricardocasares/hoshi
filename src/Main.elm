@@ -474,33 +474,18 @@ update msg model =
         LinkClicked urlRequest ->
             case urlRequest of
                 Browser.Internal url ->
-                    ( model, Nav.pushUrl model.key (Url.toString url) )
+                    case Routes.fromUrl url of
+                        Repositories username ->
+                            ( model, Cmd.batch [ fetchUser username, fetchRepositories username, Nav.pushUrl model.key (Url.toString url) ] )
+
+                        _ ->
+                            ( model, Nav.pushUrl model.key (Url.toString url) )
 
                 Browser.External href ->
                     ( model, Nav.load href )
 
         UrlChanged url ->
-            let
-                newRoute =
-                    Routes.fromUrl url
-
-                newUsername =
-                    case newRoute of
-                        Repositories username ->
-                            username
-
-                        _ ->
-                            model.username
-
-                cmds =
-                    case newRoute of
-                        Repositories username ->
-                            Cmd.batch [ fetchUser username, fetchRepositories username ]
-
-                        _ ->
-                            Cmd.none
-            in
-            ( { model | url = url, route = newRoute, username = newUsername }, cmds )
+            ( { model | url = url, route = Routes.fromUrl url }, Cmd.none )
 
         UsernameChanged username ->
             ( { model | username = username }, Cmd.none )
@@ -709,59 +694,25 @@ viewDrawerSide currentRoute =
 
 viewHomePage : Model -> Html Msg
 viewHomePage model =
-    div [ class "min-h-screen bg-gradient-to-br from-base-100 to-base-200" ]
-        [ div [ class "hero min-h-screen" ]
-            [ div [ class "hero-overlay bg-opacity-60" ] []
-            , div [ class "hero-content text-center" ]
-                [ div [ class "max-w-md" ]
-                    [ div [ class "mb-8" ]
-                        [ Icon.star Regular |> Icon.withClass "w-20 h-20 mx-auto mb-6 text-primary animate-pulse" |> Icon.toHtml []
-                        , h1 [ class "text-5xl font-bold text-base-content mb-4" ] [ text "GitHub Stars" ]
-                        , p [ class "text-xl text-base-content/80 mb-2" ] [ text "Explore starred repositories" ]
-                        , p [ class "text-base-content/60" ] [ text "Discover amazing projects from GitHub users" ]
-                        ]
-                    , div [ class "card bg-base-100 shadow-2xl" ]
-                        [ div [ class "card-body" ]
-                            [ div [ class "form-control" ]
-                                [ label [ class "label" ]
-                                    [ span [ class "label-text" ] [ text "GitHub Username" ] ]
-                                , div [ class "join" ]
-                                    [ input
-                                        [ type_ "text"
-                                        , placeholder "e.g., octocat"
-                                        , value model.username
-                                        , onInput UsernameChanged
-                                        , class "input input-bordered join-item w-full"
-                                        ]
-                                        []
-                                    , button
-                                        [ onClick (NavigateToRepositories model.username)
-                                        , class "btn btn-primary join-item"
-                                        , Html.Attributes.disabled (String.isEmpty (String.trim model.username) || model.user == Loading || model.repositories == Loading)
-                                        ]
-                                        [ case ( model.user, model.repositories ) of
-                                            ( Loading, _ ) ->
-                                                div [ class "loading loading-spinner loading-md" ] []
-
-                                            ( _, Loading ) ->
-                                                div [ class "loading loading-spinner loading-md" ] []
-
-                                            _ ->
-                                                Icon.magnifyingGlass Regular |> Icon.toHtml []
-                                        ]
-                                    ]
-                                ]
-                            , div [ class "divider" ] [ text "Popular Users" ]
-                            , div [ class "flex flex-wrap gap-2 justify-center" ]
-                                [ button [ onClick (NavigateToRepositories "torvalds"), class "btn btn-outline btn-sm" ] [ text "torvalds" ]
-                                , button [ onClick (NavigateToRepositories "gaearon"), class "btn btn-outline btn-sm" ] [ text "gaearon" ]
-                                , button [ onClick (NavigateToRepositories "tj"), class "btn btn-outline btn-sm" ] [ text "tj" ]
-                                , button [ onClick (NavigateToRepositories "sindresorhus"), class "btn btn-outline btn-sm" ] [ text "sindresorhus" ]
-                                ]
-                            ]
-                        ]
+    div [ class "flex flex-col items-center justify-center" ]
+        [ div [ class "flex-1" ]
+            [ label [ class "input input-xl" ]
+                [ Icon.magnifyingGlass Bold |> Icon.toHtml []
+                , input
+                    [ type_ "text"
+                    , placeholder "github username"
+                    , value model.username
+                    , onInput UsernameChanged
                     ]
+                    []
                 ]
+            ]
+        , div [ class "divider" ] [ text "Popular Users" ]
+        , div [ class "flex flex-wrap gap-2 justify-center" ]
+            [ a [ href <| Routes.toString <| Routes.Repositories "gaeron", class "btn btn-outline btn-sm" ] [ text "torvalds" ]
+            , a [ href <| Routes.toString <| Routes.Repositories "gaearon", class "btn btn-outline btn-sm" ] [ text "gaearon" ]
+            , a [ href <| Routes.toString <| Routes.Repositories "tj", class "btn btn-outline btn-sm" ] [ text "tj" ]
+            , a [ href <| Routes.toString <| Routes.Repositories "sindresorhus", class "btn btn-outline btn-sm" ] [ text "sindresorhus" ]
             ]
         ]
 
@@ -1187,22 +1138,8 @@ viewFooter : Html Msg
 viewFooter =
     footer [ class "footer footer-center bg-base-200 text-base-content p-10" ]
         [ div [ class "grid grid-flow-col gap-4" ]
-            [ a [ class "link link-hover" ] [ text "About" ]
-            , a [ class "link link-hover" ] [ text "Contact" ]
-            , a [ class "link link-hover" ] [ text "Jobs" ]
-            , a [ class "link link-hover" ] [ text "Press kit" ]
-            ]
-        , div []
-            [ p [] [ text "GitHub Stars Browser - Built with Elm and DaisyUI" ]
-            , p [] [ text "© 2024 - All rights reserved" ]
-            ]
-        , div [ class "grid grid-flow-col gap-4" ]
             [ a [ href "https://github.com", Html.Attributes.target "_blank", Html.Attributes.rel "noopener noreferrer" ]
                 [ Icon.githubLogo Regular |> Icon.withClass "w-6 h-6" |> Icon.toHtml [] ]
-            , a [ href "https://twitter.com", Html.Attributes.target "_blank", Html.Attributes.rel "noopener noreferrer" ]
-                [ Icon.twitterLogo Regular |> Icon.withClass "w-6 h-6" |> Icon.toHtml [] ]
-            , a [ href "https://elm-lang.org", Html.Attributes.target "_blank", Html.Attributes.rel "noopener noreferrer" ]
-                [ Icon.code Regular |> Icon.withClass "w-6 h-6" |> Icon.toHtml [] ]
             ]
         ]
 
