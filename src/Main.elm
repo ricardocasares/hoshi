@@ -116,8 +116,7 @@ type Msg
 
 navigationItems : List MenuItem
 navigationItems =
-    [ { label = "Dashboard", route = Home, icon = Icon.house }
-    , { label = "Settings", route = Settings, icon = Icon.gear }
+    [ { label = "Home", route = Home, icon = Icon.gear }
     ]
 
 
@@ -624,8 +623,8 @@ viewNavbar currentRoute =
             ]
         , div [ class "flex-1 px-2 mx-2" ]
             [ a [ href (Routes.toString Home), class "btn btn-ghost normal-case text-xl font-bold" ]
-                [ Icon.star Regular |> Icon.withClass "w-6 h-6 text-primary" |> Icon.toHtml []
-                , text "GitHub Stars"
+                [ Icon.shootingStar Regular |> Icon.withClass "w-6 h-6 text-warning" |> Icon.toHtml []
+                , text "Hoshi"
                 ]
             ]
         , div [ class "flex-none hidden lg:block" ]
@@ -709,10 +708,10 @@ viewHomePage model =
             ]
         , div [ class "divider" ] [ text "Popular Users" ]
         , div [ class "flex flex-wrap gap-2 justify-center" ]
-            [ a [ href <| Routes.toString <| Routes.Repositories "gaeron", class "btn btn-outline btn-sm" ] [ text "torvalds" ]
-            , a [ href <| Routes.toString <| Routes.Repositories "gaearon", class "btn btn-outline btn-sm" ] [ text "gaearon" ]
-            , a [ href <| Routes.toString <| Routes.Repositories "tj", class "btn btn-outline btn-sm" ] [ text "tj" ]
-            , a [ href <| Routes.toString <| Routes.Repositories "sindresorhus", class "btn btn-outline btn-sm" ] [ text "sindresorhus" ]
+            [ a [ href <| Routes.toString <| Routes.Repositories "gaeron", class "btn btn-primary btn-outline btn-sm" ] [ text "torvalds" ]
+            , a [ href <| Routes.toString <| Routes.Repositories "gaearon", class "btn btn-primary btn-outline btn-sm" ] [ text "gaearon" ]
+            , a [ href <| Routes.toString <| Routes.Repositories "tj", class "btn btn-primary btn-outline btn-sm" ] [ text "tj" ]
+            , a [ href <| Routes.toString <| Routes.Repositories "sindresorhus", class "btn btn-primary btn-outline btn-sm" ] [ text "sindresorhus" ]
             ]
         ]
 
@@ -748,14 +747,12 @@ viewSidebar model =
                     text ""
                 ]
             , div [ class "form-control mb-4" ]
-                [ label [ class "label" ]
-                    [ span [ class "label-text text-sm" ] [ text "Search topics" ] ]
-                , input
+                [ input
                     [ type_ "text"
                     , placeholder "Type to filter topics..."
                     , value model.topicSearchQuery
                     , onInput UpdateTopicSearch
-                    , class "input input-bordered input-sm"
+                    , class "input"
                     ]
                     []
                 ]
@@ -844,7 +841,7 @@ viewTopicSkeleton =
 
 viewHeader : Model -> Html Msg
 viewHeader model =
-    div [ class "bg-base-100 border-b p-4" ]
+    div [ class "flex flex-col p-4" ]
         [ div [ class "breadcrumbs mb-4" ]
             [ ul []
                 [ li [] [ a [ href (Routes.toString Home) ] [ Icon.house Regular |> Icon.toHtml [], text "Home" ] ]
@@ -881,31 +878,36 @@ viewHeader model =
 
                     _ ->
                         div [ class "flex items-center gap-3" ]
-                            [ Icon.user Regular |> Icon.withClass "w-12 h-12" |> Icon.toHtml []
-                            , div [ class "text-base-content/70" ] [ text "Loading user..." ]
+                            [ div [ class "w-12 h-12 rounded-full bg-base-300 animate-pulse" ] []
+                            , div [ class "space-y-1" ]
+                                [ div [ class "h-5 bg-base-300 rounded animate-pulse w-32" ] []
+                                , div [ class "h-4 bg-base-300 rounded animate-pulse w-20" ] []
+                                ]
                             ]
                 ]
             , div [ class "flex flex-col sm:flex-row gap-4" ]
                 [ div [ class "form-control" ]
-                    [ label [ class "label" ] [ span [ class "label-text" ] [ text "Search" ] ]
-                    , input
-                        [ type_ "text"
-                        , placeholder "Search repositories..."
-                        , value model.searchQuery
-                        , onInput SearchRepositories
-                        , class "input input-bordered"
+                    [ label [ class "input" ]
+                        [ Icon.magnifyingGlass Bold |> Icon.toHtml []
+                        , input
+                            [ type_ "text"
+                            , placeholder "Filter repositories"
+                            , value model.searchQuery
+                            , onInput SearchRepositories
+                            ]
+                            []
                         ]
-                        []
                     ]
                 , div [ class "form-control" ]
-                    [ label [ class "label" ] [ span [ class "label-text" ] [ text "Sort by" ] ]
-                    , select
-                        [ onInput (\value -> ChangeSort (stringToSortOption value))
-                        , class "select select-bordered"
-                        ]
-                        [ option [ value "stars", Html.Attributes.selected (model.sortBy == SortByStars) ] [ text "⭐ Stars" ]
-                        , option [ value "updated", Html.Attributes.selected (model.sortBy == SortByUpdated) ] [ text "📅 Updated" ]
-                        , option [ value "name", Html.Attributes.selected (model.sortBy == SortByName) ] [ text "🔤 Name" ]
+                    [ label [ class "select" ]
+                        [ span [ class "label" ] [ Icon.sortAscending Bold |> Icon.toHtml [], text "Sort by" ]
+                        , select
+                            [ onInput (\value -> ChangeSort (stringToSortOption value))
+                            ]
+                            [ option [ value "stars", Html.Attributes.selected (model.sortBy == SortByStars) ] [ text "Stars" ]
+                            , option [ value "updated", Html.Attributes.selected (model.sortBy == SortByUpdated) ] [ text "Updated" ]
+                            , option [ value "name", Html.Attributes.selected (model.sortBy == SortByName) ] [ text "Name" ]
+                            ]
                         ]
                     ]
                 ]
