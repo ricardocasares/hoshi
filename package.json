@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "run-p dev:*",
-    "dev:vite": "vite",
+    "dev:vite": "vite --host",
     "dev:test": "elm-test-rs --watch",
     "test": "elm-test-rs",
     "lint": "elm-review",
