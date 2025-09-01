@@ -3,13 +3,14 @@ module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Toast,
 import Browser
 import Browser.Navigation as Nav
 import Html exposing (Html, a, button, div, footer, form, h1, h2, input, label, li, option, p, select, span, text, ul)
-import Html.Attributes exposing (attribute, class, for, href, id, placeholder, type_, value)
+import Html.Attributes exposing (attribute, class, disabled, for, href, id, placeholder, title, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import InteropDefinitions as IO
 import InteropPorts as IO
 import Json.Decode as Decode
 import Phosphor as Icon exposing (IconWeight(..))
+import Process
 import Routes exposing (Route(..))
 import Task
 import Url
@@ -571,7 +572,7 @@ update msg model =
                 | toasts = newToast :: model.toasts
                 , nextToastId = model.nextToastId + 1
               }
-            , Cmd.none
+            , Task.perform (\_ -> RemoveToast newToast.id) (Process.sleep 3000)
             )
 
         RemoveToast id ->
@@ -718,9 +719,9 @@ viewHomePage model =
 
 viewRepositoriesPage : Model -> Html Msg
 viewRepositoriesPage model =
-    div [ class "flex flex-col lg:flex-row min-h-screen" ]
+    div [ class "flex flex-col gap-12 lg:flex-row min-h-screen" ]
         [ viewSidebar model
-        , div [ class "flex-1 flex flex-col" ]
+        , div [ class "flex-1 flex flex-col gap-4" ]
             [ viewHeader model
             , viewContent model
             ]
@@ -729,39 +730,16 @@ viewRepositoriesPage model =
 
 viewSidebar : Model -> Html Msg
 viewSidebar model =
-    div [ class "w-full lg:w-80 bg-base-200 p-4 lg:min-h-screen lg:sticky lg:top-20" ]
-        [ div [ class "mb-6" ]
-            [ div [ class "flex items-center justify-between mb-4" ]
-                [ h2 [ class "text-lg font-semibold flex items-center gap-2" ]
-                    [ Icon.tag Regular |> Icon.toHtml []
-                    , text "Topics"
-                    ]
-                , if not (List.isEmpty model.selectedTopics) then
-                    button
-                        [ onClick ClearTopics
-                        , class "btn btn-xs btn-outline btn-error"
-                        ]
-                        [ text "Clear" ]
-
-                  else
-                    text ""
+    div [ class "w-full lg:w-80 bg-base-200 lg:min-h-screen lg:sticky lg:top-20 flex flex-col gap-4" ]
+        [ label [ class "input w-full" ]
+            [ Icon.magnifyingGlass Bold |> Icon.toHtml []
+            , input
+                [ type_ "text"
+                , placeholder "Filter topics"
+                , value model.topicSearchQuery
+                , onInput UpdateTopicSearch
                 ]
-            , div [ class "form-control mb-4" ]
-                [ input
-                    [ type_ "text"
-                    , placeholder "Type to filter topics..."
-                    , value model.topicSearchQuery
-                    , onInput UpdateTopicSearch
-                    , class "input"
-                    ]
-                    []
-                ]
-            , if not (List.isEmpty model.selectedTopics) then
-                div [ class "flex flex-wrap gap-1 mb-4" ]
-                    (List.map viewSelectedTopicChip model.selectedTopics)
-
-              else
-                text ""
+                []
             ]
         , div [ class "space-y-2 max-h-96 overflow-y-auto" ]
             (case model.repositories of
@@ -786,12 +764,14 @@ viewSidebar model =
                     List.map (viewTopicFilter model.selectedTopics) (List.sortBy Tuple.first filteredTopicCounts)
 
                 _ ->
-                    [ div [ class "text-center py-8 text-base-content/60" ]
-                        [ Icon.tag Regular |> Icon.withClass "w-8 h-8 mx-auto mb-2" |> Icon.toHtml []
-                        , text "No topics available"
-                        ]
-                    ]
+                    List.repeat 8 viewTopicSkeleton
             )
+        , button
+            [ onClick ClearTopics
+            , class "btn btn-outline btn-primary"
+            , disabled (List.length model.selectedTopics == 0)
+            ]
+            [ text "Clear" ]
         ]
 
 
@@ -817,31 +797,14 @@ viewTopicFilter selectedTopics ( topic, count ) =
         ]
 
 
-viewSelectedTopicChip : String -> Html Msg
-viewSelectedTopicChip topic =
-    div [ class "badge badge-primary gap-1" ]
-        [ text topic
-        , button
-            [ onClick (ToggleTopic topic)
-            , class "btn btn-xs btn-circle btn-ghost"
-            , attribute "aria-label" ("Remove " ++ topic ++ " filter")
-            ]
-            [ text "×" ]
-        ]
-
-
 viewTopicSkeleton : Html Msg
 viewTopicSkeleton =
-    div [ class "flex items-center gap-2 p-2" ]
-        [ div [ class "w-4 h-4 bg-base-300 rounded animate-pulse" ] []
-        , div [ class "flex-1 h-4 bg-base-300 rounded animate-pulse" ] []
-        , div [ class "w-8 h-4 bg-base-300 rounded animate-pulse" ] []
-        ]
+    div [ class "flex-1 h-6 bg-base-300 rounded animate-pulse mb-3" ] []
 
 
 viewHeader : Model -> Html Msg
 viewHeader model =
-    div [ class "flex flex-col p-4" ]
+    div [ class "flex flex-col" ]
         [ div [ class "breadcrumbs mb-4" ]
             [ ul []
                 [ li [] [ a [ href (Routes.toString Home) ] [ Icon.house Regular |> Icon.toHtml [], text "Home" ] ]
@@ -857,13 +820,13 @@ viewHeader model =
                             [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-12 h-12 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
                             , div []
                                 [ div [ class "font-semibold text-lg" ] [ text (Maybe.withDefault user.login user.name) ]
-                                , div [ class "text-sm text-base-content/70" ] [ text ("@" ++ user.login) ]
+                                , div [ class "text-sm text-secondary" ] [ text ("@" ++ user.login) ]
                                 , case user.bio of
                                     Just bio ->
-                                        div [ class "text-sm text-base-content/60 mt-1" ] [ text bio ]
+                                        div [ class "text-sm text-secondary max-w-32 truncate", title bio ] [ text bio ]
 
                                     Nothing ->
-                                        text ""
+                                        text "Bio not available"
                                 ]
                             ]
 
@@ -886,28 +849,24 @@ viewHeader model =
                             ]
                 ]
             , div [ class "flex flex-col sm:flex-row gap-4" ]
-                [ div [ class "form-control" ]
-                    [ label [ class "input" ]
-                        [ Icon.magnifyingGlass Bold |> Icon.toHtml []
-                        , input
-                            [ type_ "text"
-                            , placeholder "Filter repositories"
-                            , value model.searchQuery
-                            , onInput SearchRepositories
-                            ]
-                            []
+                [ label [ class "input w-full" ]
+                    [ Icon.magnifyingGlass Bold |> Icon.toHtml []
+                    , input
+                        [ type_ "text"
+                        , placeholder "Filter repositories"
+                        , value model.searchQuery
+                        , onInput SearchRepositories
                         ]
+                        []
                     ]
-                , div [ class "form-control" ]
-                    [ label [ class "select" ]
-                        [ span [ class "label" ] [ Icon.sortAscending Bold |> Icon.toHtml [], text "Sort by" ]
-                        , select
-                            [ onInput (\value -> ChangeSort (stringToSortOption value))
-                            ]
-                            [ option [ value "stars", Html.Attributes.selected (model.sortBy == SortByStars) ] [ text "Stars" ]
-                            , option [ value "updated", Html.Attributes.selected (model.sortBy == SortByUpdated) ] [ text "Updated" ]
-                            , option [ value "name", Html.Attributes.selected (model.sortBy == SortByName) ] [ text "Name" ]
-                            ]
+                , label [ class "select w-full" ]
+                    [ span [ class "label" ] [ Icon.sortAscending Bold |> Icon.toHtml [], text "Sort by" ]
+                    , select
+                        [ onInput (\value -> ChangeSort (stringToSortOption value))
+                        ]
+                        [ option [ value "stars", Html.Attributes.selected (model.sortBy == SortByStars) ] [ text "Stars" ]
+                        , option [ value "updated", Html.Attributes.selected (model.sortBy == SortByUpdated) ] [ text "Updated" ]
+                        , option [ value "name", Html.Attributes.selected (model.sortBy == SortByName) ] [ text "Name" ]
                         ]
                     ]
                 ]
@@ -917,7 +876,7 @@ viewHeader model =
 
 viewContent : Model -> Html Msg
 viewContent model =
-    div [ class "flex-1 p-4" ]
+    div [ class "flex-1" ]
         [ case model.repositories of
             NotAsked ->
                 div [ class "text-center py-12" ]
@@ -939,22 +898,17 @@ viewContent model =
                                 [ div [ class "stat-title" ] [ text "Filtered Results" ]
                                 , div [ class "stat-value" ]
                                     [ div [ class "loading loading-spinner loading-sm" ] [] ]
-                                , div [ class "stat-desc" ] [ text "Processing..." ]
+                                , div [ class "stat-desc" ] [ text "Loading..." ]
                                 ]
                             ]
-                        ]
-                    , div [ class "text-center py-8" ]
-                        [ div [ class "loading loading-spinner loading-xl text-primary" ] []
-                        , div [ class "mt-4 text-lg font-medium" ] [ text "Loading repositories..." ]
-                        , div [ class "mt-2 text-sm text-base-content/60" ] [ text "Fetching starred repositories from GitHub" ]
                         ]
                     , div [ class "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" ]
                         (List.repeat 6 viewRepositorySkeleton)
                     ]
 
             Failure error ->
-                div [ class "alert alert-error" ]
-                    [ Icon.exclamationMark Regular |> Icon.toHtml []
+                div [ class "alert alert-error alert-soft" ]
+                    [ Icon.warning Regular |> Icon.toHtml []
                     , div []
                         [ div [ class "font-semibold" ] [ text "Error loading repositories" ]
                         , div [] [ text (errorToString error) ]
@@ -972,37 +926,35 @@ viewContent model =
                     filteredCount =
                         List.length filteredRepos
                 in
-                div []
-                    [ div [ class "mb-6" ]
-                        [ div [ class "stats stats-vertical lg:stats-horizontal shadow" ]
-                            [ div [ class "stat" ]
-                                [ div [ class "stat-title" ] [ text "Total Repositories" ]
-                                , div [ class "stat-value" ] [ text (String.fromInt totalCount) ]
-                                , div [ class "stat-desc" ] [ text "Starred by user" ]
-                                ]
-                            , div [ class "stat" ]
-                                [ div [ class "stat-title" ] [ text "Filtered Results" ]
-                                , div [ class "stat-value" ] [ text (String.fromInt filteredCount) ]
-                                , div [ class "stat-desc" ]
-                                    [ text
-                                        (if totalCount == filteredCount then
-                                            "No filters applied"
-
-                                         else
-                                            String.fromInt (totalCount - filteredCount) ++ " hidden"
-                                        )
-                                    ]
-                                ]
-                            , if not (List.isEmpty model.selectedTopics) then
-                                div [ class "stat" ]
-                                    [ div [ class "stat-title" ] [ text "Active Filters" ]
-                                    , div [ class "stat-value" ] [ text (String.fromInt (List.length model.selectedTopics)) ]
-                                    , div [ class "stat-desc" ] [ text "Topics selected" ]
-                                    ]
-
-                              else
-                                text ""
+                div [ class "flex flex-col gap-4" ]
+                    [ div [ class "stats" ]
+                        [ div [ class "stat" ]
+                            [ div [ class "stat-title" ] [ text "Total Repositories" ]
+                            , div [ class "stat-value" ] [ text (String.fromInt totalCount) ]
+                            , div [ class "stat-desc" ] [ text "Starred by user" ]
                             ]
+                        , div [ class "stat" ]
+                            [ div [ class "stat-title" ] [ text "Filtered Results" ]
+                            , div [ class "stat-value" ] [ text (String.fromInt filteredCount) ]
+                            , div [ class "stat-desc" ]
+                                [ text
+                                    (if totalCount == filteredCount then
+                                        "No filters applied"
+
+                                     else
+                                        String.fromInt (totalCount - filteredCount) ++ " hidden"
+                                    )
+                                ]
+                            ]
+                        , if not (List.isEmpty model.selectedTopics) then
+                            div [ class "stat" ]
+                                [ div [ class "stat-title" ] [ text "Active Filters" ]
+                                , div [ class "stat-value" ] [ text (String.fromInt (List.length model.selectedTopics)) ]
+                                , div [ class "stat-desc" ] [ text "Topics selected" ]
+                                ]
+
+                          else
+                            text ""
                         ]
                     , div [ class "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" ]
                         (List.map viewRepositoryCard filteredRepos)
@@ -1034,32 +986,20 @@ viewRepositoryCard repo =
                     p [ class "text-sm text-base-content/80 mb-4 line-clamp-2" ] [ text desc ]
 
                 Nothing ->
-                    text ""
-            , div [ class "flex flex-wrap gap-1 mb-4" ]
-                (List.map (\topic -> div [ class "badge badge-primary badge-sm" ] [ text topic ]) repo.topics)
+                    text "No description available."
             , div [ class "flex items-center justify-between" ]
                 [ case repo.language of
                     Just lang ->
-                        div [ class "flex items-center gap-2" ]
-                            [ div [ class "w-3 h-3 rounded-full bg-primary" ] []
-                            , span [ class "text-sm font-medium" ] [ text lang ]
+                        div [ class "flex items-center gap-2 text-secondary" ]
+                            [ Icon.code Bold |> Icon.toHtml []
+                            , span [ class "text-sm" ] [ text lang ]
                             ]
 
                     Nothing ->
-                        text ""
-                , div [ class "text-xs text-base-content/60" ]
-                    [ text ("Updated " ++ formatDate repo.updatedAt) ]
-                ]
-            , div [ class "card-actions justify-end mt-4" ]
-                [ Html.a
-                    [ Html.Attributes.href repo.htmlUrl
-                    , Html.Attributes.target "_blank"
-                    , Html.Attributes.rel "noopener noreferrer"
-                    , class "btn btn-primary btn-sm"
-                    ]
-                    [ text "View on GitHub"
-                    , Icon.arrowSquareOut Regular |> Icon.toHtml []
-                    ]
+                        div [ class "flex items-center gap-2 text-secondary" ]
+                            [ Icon.code Bold |> Icon.toHtml []
+                            , span [ class "text-sm" ] [ text "Unknown" ]
+                            ]
                 ]
             ]
         ]
@@ -1090,7 +1030,7 @@ viewRepositorySkeleton =
                 , div [ class "h-3 bg-base-300 rounded w-20" ] []
                 ]
             , div [ class "card-actions justify-end mt-4" ]
-                [ div [ class "btn btn-primary btn-sm w-24 bg-base-300" ] [] ]
+                [ div [ class "btn btn-sm w-24 bg-base-300" ] [] ]
             ]
         ]
 
@@ -1147,19 +1087,19 @@ viewFooter =
 
 viewToasts : List Toast -> Html Msg
 viewToasts toasts =
-    div [ class "toast toast-top toast-end z-[100]" ]
+    div [ class "toast toast-bottom toast-end z-[100]" ]
         (List.map viewToast toasts)
 
 
 viewToast : Toast -> Html Msg
 viewToast toast =
-    div [ class ("alert " ++ toastTypeToClass toast.toastType) ]
+    div [ class ("alert alert-soft " ++ toastTypeToClass toast.toastType) ]
         [ case toast.toastType of
             ToastSuccess ->
                 Icon.checkCircle Regular |> Icon.toHtml []
 
             ToastError ->
-                Icon.exclamationMark Regular |> Icon.toHtml []
+                Icon.warning Regular |> Icon.toHtml []
 
             ToastInfo ->
                 Icon.info Regular |> Icon.toHtml []
