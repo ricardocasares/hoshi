@@ -839,6 +839,18 @@ viewTopicSkeleton =
     div [ class "flex-1 h-6 bg-base-300 rounded animate-pulse mb-3" ] []
 
 
+viewUserSkeleton : Html Msg
+viewUserSkeleton =
+    div [ class "flex items-center gap-4" ]
+        [ div [ class "w-14 h-14 rounded-full bg-base-300 animate-pulse" ] []
+        , div [ class "flex flex-col gap-2" ]
+            [ div [ class "h-5 bg-base-300 rounded animate-pulse w-32" ] []
+            , div [ class "h-4 bg-base-300 rounded animate-pulse w-20" ] []
+            , div [ class "h-4 bg-base-300 rounded animate-pulse w-64" ] []
+            ]
+        ]
+
+
 viewHeader : Model -> Html Msg
 viewHeader model =
     div [ class "flex flex-col" ]
@@ -865,40 +877,26 @@ viewHeader model =
         , div [ class "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4" ]
             [ div [ class "flex items-center gap-4" ]
                 [ case model.user of
-                    Success user ->
-                        div [ class "flex items-center gap-4" ]
-                            [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-14 h-14 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
-                            , div []
-                                [ div [ class "font-semibold text-lg max-w-32 md:max-w-64 truncate" ] [ text (Maybe.withDefault user.login user.name) ]
-                                , div [ class "text-sm text-secondary" ] [ text ("@" ++ user.login) ]
-                                , case user.bio of
-                                    Just bio ->
-                                        div [ class "text-sm text-secondary max-w-32 truncate", title bio ] [ text bio ]
+                     Success user ->
+                         div [ class "flex items-center gap-4" ]
+                             [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-14 h-14 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
+                             , div []
+                                 [ div [ class "font-semibold text-lg max-w-32 md:max-w-64 truncate" ] [ text (Maybe.withDefault user.login user.name) ]
+                                 , div [ class "text-sm text-secondary" ] [ text ("@" ++ user.login) ]
+                                 , case user.bio of
+                                     Just bio ->
+                                         div [ class "text-sm text-secondary max-w-32 truncate", title bio ] [ text bio ]
 
-                                    Nothing ->
-                                        text ""
-                                ]
-                            ]
+                                     Nothing ->
+                                         text ""
+                                 ]
+                             ]
 
-                    Loading ->
-                        div [ class "flex items-center gap-4" ]
-                            [ div [ class "w-14 h-14 rounded-full bg-base-300 animate-pulse" ] []
-                            , div [ class "flex flex-col gap-2" ]
-                                [ div [ class "h-5 bg-base-300 rounded animate-pulse w-32" ] []
-                                , div [ class "h-4 bg-base-300 rounded animate-pulse w-20" ] []
-                                , div [ class "h-4 bg-base-300 rounded animate-pulse w-64" ] []
-                                ]
-                            ]
+                     Loading ->
+                         viewUserSkeleton
 
-                    _ ->
-                        div [ class "flex items-center gap-4" ]
-                            [ div [ class "w-14 h-14 rounded-full bg-base-300 animate-pulse" ] []
-                            , div [ class "flex flex-col gap-2" ]
-                                [ div [ class "h-5 bg-base-300 rounded animate-pulse w-32" ] []
-                                , div [ class "h-4 bg-base-300 rounded animate-pulse w-20" ] []
-                                , div [ class "h-4 bg-base-300 rounded animate-pulse w-64" ] []
-                                ]
-                            ]
+                     _ ->
+                         viewUserSkeleton
                 ]
             , div [ class "flex flex-col sm:flex-row gap-4" ]
                 [ label [ class "input w-full" ]
@@ -942,13 +940,13 @@ viewContent model =
                         [ div [ class "stat" ]
                             [ div [ class "stat-title" ] [ text "Total Repositories" ]
                             , div [ class "stat-value" ]
-                                [ div [ class "loading loading-infinity" ] [] ]
+                                [ div [ class "loading loading-spinner loading-lg" ] [] ]
                             , div [ class "stat-desc" ] [ text "Loading..." ]
                             ]
                         , div [ class "stat" ]
                             [ div [ class "stat-title" ] [ text "Filtered Results" ]
                             , div [ class "stat-value" ]
-                                [ div [ class "loading loading-infinity" ] [] ]
+                                [ div [ class "loading loading-spinner loading-lg" ] [] ]
                             , div [ class "stat-desc" ] [ text "Loading..." ]
                             ]
                         ]
