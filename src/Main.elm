@@ -816,8 +816,8 @@ viewHeader model =
             [ div [ class "flex items-center gap-4" ]
                 [ case model.user of
                     Success user ->
-                        div [ class "flex items-center gap-3" ]
-                            [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-12 h-12 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
+                        div [ class "flex items-center gap-4" ]
+                            [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-14 h-14 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
                             , div []
                                 [ div [ class "font-semibold text-lg" ] [ text (Maybe.withDefault user.login user.name) ]
                                 , div [ class "text-sm text-secondary" ] [ text ("@" ++ user.login) ]
@@ -826,25 +826,27 @@ viewHeader model =
                                         div [ class "text-sm text-secondary max-w-32 truncate", title bio ] [ text bio ]
 
                                     Nothing ->
-                                        text "Bio not available"
+                                        text ""
                                 ]
                             ]
 
                     Loading ->
-                        div [ class "flex items-center gap-3" ]
-                            [ div [ class "w-12 h-12 rounded-full bg-base-300 animate-pulse" ] []
-                            , div [ class "space-y-1" ]
-                                [ div [ class "h-5 bg-base-300 rounded animate-pulse w-32" ] []
+                        div [ class "flex items-center gap-4" ]
+                            [ div [ class "w-14 h-14 rounded-full bg-base-300 animate-pulse" ] []
+                            , div [ class "flex flex-col gap-2" ]
+                                [ div [ class "h-6 bg-base-300 rounded animate-pulse w-32" ] []
                                 , div [ class "h-4 bg-base-300 rounded animate-pulse w-20" ] []
+                                , div [ class "h-4 bg-base-300 rounded animate-pulse w-64" ] []
                                 ]
                             ]
 
                     _ ->
-                        div [ class "flex items-center gap-3" ]
-                            [ div [ class "w-12 h-12 rounded-full bg-base-300 animate-pulse" ] []
-                            , div [ class "space-y-1" ]
-                                [ div [ class "h-5 bg-base-300 rounded animate-pulse w-32" ] []
+                        div [ class "flex items-center gap-4" ]
+                            [ div [ class "w-14 h-14 rounded-full bg-base-300 animate-pulse" ] []
+                            , div [ class "flex flex-col gap-2" ]
+                                [ div [ class "h-6 bg-base-300 rounded animate-pulse w-32" ] []
                                 , div [ class "h-4 bg-base-300 rounded animate-pulse w-20" ] []
+                                , div [ class "h-4 bg-base-300 rounded animate-pulse w-64" ] []
                                 ]
                             ]
                 ]
