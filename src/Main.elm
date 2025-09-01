@@ -583,7 +583,7 @@ update msg model =
 
 view : Model -> Browser.Document Msg
 view model =
-    { title = "GitHub Stars Browser"
+    { title = "Hoshi - GitHub Stars Browser"
     , body = [ viewBody model ]
     }
 
@@ -700,7 +700,7 @@ viewHomePage model =
                 [ Icon.magnifyingGlass Bold |> Icon.toHtml []
                 , input
                     [ type_ "text"
-                    , placeholder "github username"
+                    , placeholder "GitHub username"
                     , value model.username
                     , onInput UsernameChanged
                     ]
