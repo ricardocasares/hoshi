@@ -752,7 +752,7 @@ viewSidebar model =
                             else
                                 List.filter (\( topic, _ ) -> fuzzyMatch model.topicSearchQuery topic) topicCounts
                     in
-                    List.map (viewTopicFilter model.selectedTopics) (List.sortBy Tuple.first filteredTopicCounts)
+                    List.map (viewTopicFilter model.selectedTopics) (List.sortBy (Tuple.second >> negate) filteredTopicCounts)
 
                 _ ->
                     List.repeat 8 viewTopicSkeleton
