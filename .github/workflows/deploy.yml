@@ -25,7 +25,7 @@ jobs:
       - run: bun install
       - run: bun run lint
       - run: bun run test
-      - run: bun run build --base="/vite-elm-tpl"
+      - run: bun run build --base="/hoshi"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

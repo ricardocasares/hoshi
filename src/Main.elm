@@ -658,7 +658,7 @@ viewNavbar currentRoute =
                 ]
             ]
         , div [ class "flex-1 px-2 mx-2" ]
-            [ a [ href (Routes.toString Home), class "btn btn-ghost normal-case text-xl font-bold" ]
+            [ a [ href (Routes.toString Home), class "btn btn-ghost normal-case text-xl font-normal" ]
                 [ Icon.shootingStar Regular |> Icon.withClass "w-6 h-6 text-warning" |> Icon.toHtml []
                 , text "Hoshi"
                 ]
@@ -670,8 +670,8 @@ viewNavbar currentRoute =
         , div [ class "flex-none" ]
             [ label [ class "swap swap-rotate" ]
                 [ input [ type_ "checkbox", onClick ToggleTheme ] []
-                , Icon.sun Bold |> Icon.withClass "w-6 h-6 swap-on" |> Icon.toHtml []
-                , Icon.moon Bold |> Icon.withClass "w-6 h-6 swap-off" |> Icon.toHtml []
+                , Icon.moon Bold |> Icon.withClass "w-6 h-6 swap-on" |> Icon.toHtml []
+                , Icon.sun Bold |> Icon.withClass "w-6 h-6 swap-off" |> Icon.toHtml []
                 ]
             , div [ class "dropdown dropdown-end" ]
                 [ div [ attribute "tabindex" "0", attribute "role" "button", class "btn btn-ghost btn-circle avatar" ]
@@ -773,40 +773,42 @@ viewSidebar model =
                 ]
                 []
             ]
-        , div [ class "space-y-2 max-h-96 overflow-y-auto" ]
-            (case model.repositories of
-                Loading ->
-                    List.repeat 8 viewTopicSkeleton
+        , div [ class "max-h-96 overflow-y-scroll" ]
+            [ div [ class "menu p-0 w-full gap-1" ]
+                (case model.repositories of
+                    Loading ->
+                        List.repeat 8 viewTopicSkeleton
 
-                Success repos ->
-                    let
-                        allTopics : List String
-                        allTopics =
-                            getAllTopics repos
+                    Success repos ->
+                        let
+                            allTopics : List String
+                            allTopics =
+                                getAllTopics repos
 
-                        topicCounts : List ( String, Int )
-                        topicCounts =
-                            getTopicCounts repos allTopics
+                            topicCounts : List ( String, Int )
+                            topicCounts =
+                                getTopicCounts repos allTopics
 
-                        filteredTopicCounts : List ( String, Int )
-                        filteredTopicCounts =
-                            if String.isEmpty (String.trim model.topicSearchQuery) then
-                                topicCounts
+                            filteredTopicCounts : List ( String, Int )
+                            filteredTopicCounts =
+                                if String.isEmpty (String.trim model.topicSearchQuery) then
+                                    topicCounts
 
-                            else
-                                List.filter (\( topic, _ ) -> fuzzyMatch model.topicSearchQuery topic) topicCounts
-                    in
-                    List.map (viewTopicFilter model.selectedTopics) (List.sortBy (Tuple.second >> negate) filteredTopicCounts)
+                                else
+                                    List.filter (\( topic, _ ) -> fuzzyMatch model.topicSearchQuery topic) topicCounts
+                        in
+                        List.map (viewTopicFilter model.selectedTopics) (List.sortBy (Tuple.second >> negate) filteredTopicCounts)
 
-                _ ->
-                    List.repeat 8 viewTopicSkeleton
-            )
+                    _ ->
+                        List.repeat 8 viewTopicSkeleton
+                )
+            ]
         , button
             [ onClick ClearTopics
             , class "btn btn-outline btn-primary"
             , disabled (List.isEmpty model.selectedTopics)
             ]
-            [ text "Clear" ]
+            [ text <| "Clear (" ++ (String.fromInt <| List.length model.selectedTopics) ++ ")" ]
         ]
 
 
@@ -820,17 +822,15 @@ viewTopicFilter selectedTopics ( topic, count ) =
         buttonClass : String
         buttonClass =
             if isSelected then
-                "btn-primary"
+                "menu-active"
 
             else
-                "btn-ghost"
+                ""
     in
-    button
+    li
         [ onClick (ToggleTopic topic)
-        , class ("btn btn-sm w-full justify-start " ++ buttonClass)
         ]
-        [ text topic
-        , div [ class "badge badge-xs ml-auto" ] [ text (String.fromInt count) ]
+        [ span [ class buttonClass ] [ text topic, div [ class "badge badge-sm" ] [ text (String.fromInt count) ] ]
         ]
 
 
@@ -869,7 +869,7 @@ viewHeader model =
                         div [ class "flex items-center gap-4" ]
                             [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-14 h-14 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
                             , div []
-                                [ div [ class "font-semibold text-lg" ] [ text (Maybe.withDefault user.login user.name) ]
+                                [ div [ class "font-semibold text-lg max-w-32 md:max-w-64 truncate" ] [ text (Maybe.withDefault user.login user.name) ]
                                 , div [ class "text-sm text-secondary" ] [ text ("@" ++ user.login) ]
                                 , case user.bio of
                                     Just bio ->

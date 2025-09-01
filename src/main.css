@@ -1,4 +1,10 @@
+@import url("https://fonts.cdnfonts.com/css/inter");
 @import "tailwindcss";
+
+@theme {
+  --font-inter: "Inter", var(--font-sans);
+}
+
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark;
 }
@@ -75,7 +81,7 @@
 
 html,
 body {
-  @apply h-dvh bg-base-200;
+  @apply h-dvh bg-base-200 font-inter;
 }
 
 .card-border {
