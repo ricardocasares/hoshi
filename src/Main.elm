@@ -2,7 +2,7 @@ module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Toast,
 
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, a, button, div, footer, form, h1, h2, input, label, li, option, p, select, span, text, ul)
+import Html exposing (Html, a, button, div, footer, form, input, label, li, option, p, select, span, text, ul)
 import Html.Attributes exposing (attribute, class, disabled, for, href, id, placeholder, title, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
@@ -61,9 +61,7 @@ type alias Toast =
 
 
 type ToastType
-    = ToastSuccess
-    | ToastError
-    | ToastInfo
+    = ToastError
 
 
 type alias Model =
@@ -218,6 +216,7 @@ filterBySearch query repos =
 
     else
         let
+            lowerQuery : String
             lowerQuery =
                 String.toLower query
         in
@@ -387,9 +386,11 @@ main =
 init : IO.Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init _ url key =
     let
+        route : Route
         route =
             Routes.fromUrl url
 
+        initialData : { username : String, user : RemoteData Http.Error User, repositories : RemoteData Http.Error (List Repository), cmd : Cmd Msg }
         initialData =
             case route of
                 Repositories username ->
@@ -470,7 +471,16 @@ update msg model =
                 Browser.Internal url ->
                     case Routes.fromUrl url of
                         Repositories username ->
-                            ( { model | user = Loading, repositories = Loading }, Cmd.batch [ fetchUser username, fetchRepositories username, Nav.pushUrl model.key (Url.toString url) ] )
+                            ( { model
+                                | user = Loading
+                                , repositories = Loading
+                                , selectedTopics = []
+                                , topicSearchQuery = ""
+                                , searchQuery = ""
+                                , sortBy = SortByStars
+                              }
+                            , Cmd.batch [ fetchUser username, fetchRepositories username, Nav.pushUrl model.key (Url.toString url) ]
+                            )
 
                         _ ->
                             ( model, Nav.pushUrl model.key (Url.toString url) )
@@ -523,6 +533,7 @@ update msg model =
 
         ToggleTopic topic ->
             let
+                newSelectedTopics : List String
                 newSelectedTopics =
                     if List.member topic model.selectedTopics then
                         List.filter (\t -> t /= topic) model.selectedTopics
@@ -545,6 +556,7 @@ update msg model =
 
         ToggleTheme ->
             let
+                newTheme : String
                 newTheme =
                     if model.theme == "light" then
                         "dark"
@@ -556,6 +568,7 @@ update msg model =
 
         AddToast message toastType ->
             let
+                newToast : Toast
                 newToast =
                     { id = model.nextToastId
                     , message = message
@@ -739,12 +752,15 @@ viewSidebar model =
 
                 Success repos ->
                     let
+                        allTopics : List String
                         allTopics =
                             getAllTopics repos
 
+                        topicCounts : List (String, Int)
                         topicCounts =
                             getTopicCounts repos allTopics
 
+                        filteredTopicCounts : List (String, Int)
                         filteredTopicCounts =
                             if String.isEmpty (String.trim model.topicSearchQuery) then
                                 topicCounts
@@ -760,7 +776,7 @@ viewSidebar model =
         , button
             [ onClick ClearTopics
             , class "btn btn-outline btn-primary"
-            , disabled (List.length model.selectedTopics == 0)
+            , disabled (List.isEmpty model.selectedTopics)
             ]
             [ text "Clear" ]
         ]
@@ -769,9 +785,11 @@ viewSidebar model =
 viewTopicFilter : List String -> ( String, Int ) -> Html Msg
 viewTopicFilter selectedTopics ( topic, count ) =
     let
+        isSelected : Bool
         isSelected =
             List.member topic selectedTopics
 
+        buttonClass : String
         buttonClass =
             if isSelected then
                 "btn-primary"
@@ -908,12 +926,15 @@ viewContent model =
 
             Success repos ->
                 let
+                    filteredRepos : List Repository
                     filteredRepos =
                         filterAndSortRepos model repos
 
+                    totalCount : Int
                     totalCount =
                         List.length repos
 
+                    filteredCount : Int
                     filteredCount =
                         List.length filteredRepos
                 in
@@ -955,7 +976,7 @@ viewContent model =
 
 viewRepositoryCard : Repository -> Html Msg
 viewRepositoryCard repo =
-    div [ class "card bg-base-100 transition-all duration-300 hover:scale-105 border border-base-300" ]
+    div [ class "card bg-base-100 hover:border-base-300 border border-base-200" ]
         [ div [ class "card-body" ]
             [ div [ class "flex items-start justify-between mb-2" ]
                 [ div [ class "card-title text-lg" ]
@@ -1079,14 +1100,8 @@ viewToast : Toast -> Html Msg
 viewToast toast =
     div [ class ("alert alert-soft " ++ toastTypeToClass toast.toastType) ]
         [ case toast.toastType of
-            ToastSuccess ->
-                Icon.checkCircle Regular |> Icon.toHtml []
-
             ToastError ->
                 Icon.warning Regular |> Icon.toHtml []
-
-            ToastInfo ->
-                Icon.info Regular |> Icon.toHtml []
         , span [] [ text toast.message ]
         , button
             [ onClick (RemoveToast toast.id)
@@ -1100,11 +1115,5 @@ viewToast toast =
 toastTypeToClass : ToastType -> String
 toastTypeToClass toastType =
     case toastType of
-        ToastSuccess ->
-            "alert-success"
-
         ToastError ->
             "alert-error"
-
-        ToastInfo ->
-            "alert-info"
