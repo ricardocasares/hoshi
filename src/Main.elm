@@ -1,4 +1,4 @@
-module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, User, main)
+module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Theme, User, main)
 
 import Browser
 import Browser.Navigation as Nav
@@ -56,6 +56,11 @@ type SortOption
     | SortByName
 
 
+type Theme
+    = Dark
+    | Light
+
+
 
 -- Toast and ToastType are now imported from Toast module
 
@@ -73,7 +78,7 @@ type alias Model =
     , sortBy : SortOption
     , accumulatedRepos : List Repository
     , nextPageUrl : Maybe String
-    , theme : String
+    , theme : Theme
     , toasts : List (Toast.Toast Msg)
     , nextToastId : Int
     }
@@ -165,6 +170,36 @@ repositoryDecoder =
 
 
 -- Helper Functions
+
+
+stringToTheme : String -> Theme
+stringToTheme str =
+    case str of
+        "dark" ->
+            Dark
+
+        _ ->
+            Light
+
+
+themeToString : Theme -> String
+themeToString theme =
+    case theme of
+        Dark ->
+            "dark"
+
+        Light ->
+            "light"
+
+
+toggleTheme : Theme -> Theme
+toggleTheme theme =
+    case theme of
+        Dark ->
+            Light
+
+        Light ->
+            Dark
 
 
 getAllTopics : List Repository -> List String
@@ -415,7 +450,7 @@ init flags url key =
       , sortBy = SortByStars
       , accumulatedRepos = []
       , nextPageUrl = Nothing
-      , theme = flags.theme
+      , theme = stringToTheme flags.theme
       , toasts = []
       , nextToastId = 1
       }
@@ -552,15 +587,11 @@ update msg model =
 
         ToggleTheme ->
             let
-                newTheme : String
+                newTheme : Theme
                 newTheme =
-                    if model.theme == "light" then
-                        "dark"
-
-                    else
-                        "light"
+                    toggleTheme model.theme
             in
-            ( { model | theme = newTheme }, IO.fromElm (IO.SaveTheme newTheme) )
+            ( { model | theme = newTheme }, IO.fromElm (IO.SaveTheme (themeToString newTheme)) )
 
         AddToast message toastType ->
             let
@@ -594,7 +625,7 @@ view model =
 
 viewBody : Model -> Html Msg
 viewBody model =
-    div [ class "min-h-screen flex flex-col", attribute "data-theme" model.theme ]
+    div [ class "min-h-screen flex flex-col", attribute "data-theme" (themeToString model.theme) ]
         [ viewNavbar model.route
         , div [ class "flex flex-col flex-1" ]
             [ div [ class "drawer lg:hidden" ]
@@ -815,7 +846,20 @@ viewHeader model =
             [ ul []
                 [ li [] [ a [ href (Routes.toString Home) ] [ Icon.house Regular |> Icon.toHtml [], text "Home" ] ]
                 , li [] [ text "Repositories" ]
-                , li [] [ text model.username ]
+                , li []
+                    [ case model.user of
+                        NotAsked ->
+                            text ""
+
+                        Loading ->
+                            span [ class "h-4 w-20 animate animate-pulse bg-base-300 rounded" ] []
+
+                        Success user ->
+                            text user.login
+
+                        Failure _ ->
+                            span [ class "h-4 w-20 animate animate-pulse bg-base-300 rounded" ] []
+                    ]
                 ]
             ]
         , div [ class "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4" ]
@@ -1016,7 +1060,7 @@ viewRepositoryCard repo =
 
 viewRepositorySkeleton : Html Msg
 viewRepositorySkeleton =
-    Card.card [ class "bg-base-100 shadow-xl animate-pulse border border-base-300" ]
+    Card.card [ class "bg-base-100 animate-pulse border border-base-300" ]
         [ Card.body []
             [ div [ class "flex items-start justify-between mb-2" ]
                 [ div [ class "h-6 bg-base-300 rounded w-3/4" ] []
