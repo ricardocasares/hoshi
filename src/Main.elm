@@ -1,4 +1,4 @@
-module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Toast, ToastType, User, main)
+module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, User, main)
 
 import Browser
 import Browser.Navigation as Nav
@@ -13,6 +13,9 @@ import Phosphor as Icon exposing (IconWeight(..))
 import Process
 import Routes exposing (Route(..))
 import Task
+import UI.Alert as Alert
+import UI.Card as Card
+import UI.Toast as Toast
 import Url
 
 
@@ -53,15 +56,8 @@ type SortOption
     | SortByName
 
 
-type alias Toast =
-    { id : Int
-    , message : String
-    , toastType : ToastType
-    }
 
-
-type ToastType
-    = ToastError
+-- Toast and ToastType are now imported from Toast module
 
 
 type alias Model =
@@ -78,7 +74,7 @@ type alias Model =
     , accumulatedRepos : List Repository
     , nextPageUrl : Maybe String
     , theme : String
-    , toasts : List Toast
+    , toasts : List (Toast.Toast Msg)
     , nextToastId : Int
     }
 
@@ -105,7 +101,7 @@ type Msg
     | ChangeSort SortOption
     | NavigateToRepositories String
     | ToggleTheme
-    | AddToast String ToastType
+    | AddToast String Toast.ToastType
     | RemoveToast Int
 
 
@@ -509,7 +505,7 @@ update msg model =
 
                 Err error ->
                     ( { model | user = Failure error }
-                    , Task.perform (\_ -> AddToast ("Failed to load user: " ++ errorToString error) ToastError) (Task.succeed ())
+                    , Task.perform (\_ -> AddToast ("Failed to load user: " ++ errorToString error) Toast.Error) (Task.succeed ())
                     )
 
         RepositoriesFetched result ->
@@ -523,12 +519,12 @@ update msg model =
 
                         Err decodeError ->
                             ( { model | repositories = Failure (Http.BadBody (Decode.errorToString decodeError)) }
-                            , Task.perform (\_ -> AddToast "Failed to parse repository data" ToastError) (Task.succeed ())
+                            , Task.perform (\_ -> AddToast "Failed to parse repository data" Toast.Error) (Task.succeed ())
                             )
 
                 Err error ->
                     ( { model | repositories = Failure error }
-                    , Task.perform (\_ -> AddToast ("Failed to load repositories: " ++ errorToString error) ToastError) (Task.succeed ())
+                    , Task.perform (\_ -> AddToast ("Failed to load repositories: " ++ errorToString error) Toast.Error) (Task.succeed ())
                     )
 
         ToggleTopic topic ->
@@ -568,11 +564,12 @@ update msg model =
 
         AddToast message toastType ->
             let
-                newToast : Toast
+                newToast : Toast.Toast Msg
                 newToast =
                     { id = model.nextToastId
                     , message = message
                     , toastType = toastType
+                    , onClose = RemoveToast
                     }
             in
             ( { model
@@ -916,7 +913,7 @@ viewContent model =
                     ]
 
             Failure error ->
-                div [ class "alert alert-error alert-soft" ]
+                Alert.error [ class "alert-soft" ]
                     [ Icon.warning Regular |> Icon.toHtml []
                     , div []
                         [ div [ class "font-semibold" ] [ text "Error loading repositories" ]
@@ -976,10 +973,10 @@ viewContent model =
 
 viewRepositoryCard : Repository -> Html Msg
 viewRepositoryCard repo =
-    div [ class "card bg-base-100 hover:border-base-300 border border-base-200" ]
-        [ div [ class "card-body" ]
+    Card.card [ class "bg-base-100 hover:border-base-300 border border-base-200" ]
+        [ Card.body []
             [ div [ class "flex items-start justify-between mb-2" ]
-                [ div [ class "card-title text-lg" ]
+                [ Card.title [ class "text-lg" ]
                     [ Html.a
                         [ Html.Attributes.href repo.htmlUrl
                         , Html.Attributes.target "_blank"
@@ -1019,8 +1016,8 @@ viewRepositoryCard repo =
 
 viewRepositorySkeleton : Html Msg
 viewRepositorySkeleton =
-    div [ class "card bg-base-100 shadow-xl animate-pulse border border-base-300" ]
-        [ div [ class "card-body" ]
+    Card.card [ class "bg-base-100 shadow-xl animate-pulse border border-base-300" ]
+        [ Card.body []
             [ div [ class "flex items-start justify-between mb-2" ]
                 [ div [ class "h-6 bg-base-300 rounded w-3/4" ] []
                 , div [ class "flex items-center gap-1" ]
@@ -1043,14 +1040,14 @@ viewRepositorySkeleton =
 viewSettings : String -> Html Msg
 viewSettings title =
     div [ class "flex flex-col gap-6" ]
-        [ div [ class "card bg-base-100 shadow-xl" ]
-            [ div [ class "card-body" ]
-                [ div [ class "card-title" ] [ Icon.gear Regular |> Icon.toHtml [], text title ]
+        [ Card.card [ class "bg-base-100 shadow-xl" ]
+            [ Card.body []
+                [ Card.title [] [ Icon.gear Regular |> Icon.toHtml [], text title ]
                 , div [] [ text "Manage your application settings" ]
                 , div [ class "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4" ]
-                    [ div [ class "card bg-base-200" ]
-                        [ div [ class "card-body" ]
-                            [ div [ class "card-title text-sm" ] [ text "Notifications" ]
+                    [ Card.card [ class "bg-base-200" ]
+                        [ Card.body []
+                            [ Card.title [ class "text-sm" ] [ text "Notifications" ]
                             , div [ class "form-control" ]
                                 [ label [ class "label cursor-pointer" ]
                                     [ text "Email notifications"
@@ -1059,9 +1056,9 @@ viewSettings title =
                                 ]
                             ]
                         ]
-                    , div [ class "card bg-base-200" ]
-                        [ div [ class "card-body" ]
-                            [ div [ class "card-title text-sm" ] [ text "Theme" ]
+                    , Card.card [ class "bg-base-200" ]
+                        [ Card.body []
+                            [ Card.title [ class "text-sm" ] [ text "Theme" ]
                             , div [ class "form-control" ]
                                 [ label [ class "label cursor-pointer" ]
                                     [ text "Dark mode"
@@ -1071,7 +1068,7 @@ viewSettings title =
                             ]
                         ]
                     ]
-                , div [ class "card-actions justify-end" ]
+                , Card.actions [ class "justify-end" ]
                     [ button [ class "btn btn-ghost" ] [ text "Reset" ]
                     , button [ class "btn btn-primary" ] [ text "Save Changes" ]
                     ]
@@ -1090,30 +1087,12 @@ viewFooter =
         ]
 
 
-viewToasts : List Toast -> Html Msg
+viewToasts : List (Toast.Toast Msg) -> Html Msg
 viewToasts toasts =
-    div [ class "toast toast-bottom toast-end z-[100]" ]
+    Toast.container [ class "toast-bottom toast-end" ]
         (List.map viewToast toasts)
 
 
-viewToast : Toast -> Html Msg
+viewToast : Toast.Toast Msg -> Html Msg
 viewToast toast =
-    div [ class ("alert alert-soft " ++ toastTypeToClass toast.toastType) ]
-        [ case toast.toastType of
-            ToastError ->
-                Icon.warning Regular |> Icon.toHtml []
-        , span [] [ text toast.message ]
-        , button
-            [ onClick (RemoveToast toast.id)
-            , class "btn btn-sm btn-circle btn-ghost"
-            , attribute "aria-label" "Close toast"
-            ]
-            [ text "✕" ]
-        ]
-
-
-toastTypeToClass : ToastType -> String
-toastTypeToClass toastType =
-    case toastType of
-        ToastError ->
-            "alert-error"
+    Toast.toast toast
