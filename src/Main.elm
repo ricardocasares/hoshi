@@ -277,12 +277,6 @@ errorToString error =
             "Bad body: " ++ body
 
 
-formatDate : String -> String
-formatDate dateString =
-    -- Simple date formatting, could be enhanced
-    String.left 10 dateString
-
-
 unique : List a -> List a
 unique list =
     uniqueHelper [] list
@@ -424,7 +418,7 @@ init _ url key =
       , sortBy = SortByStars
       , accumulatedRepos = []
       , nextPageUrl = Nothing
-      , theme = "light"
+      , theme = "dark"
       , toasts = []
       , nextToastId = 1
       }
@@ -590,7 +584,7 @@ view model =
 
 viewBody : Model -> Html Msg
 viewBody model =
-    div [ class "min-h-screen flex flex-col" ]
+    div [ class "min-h-screen flex flex-col", attribute "data-theme" model.theme ]
         [ viewNavbar model.route
         , div [ class "flex flex-col flex-1" ]
             [ div [ class "drawer lg:hidden" ]
@@ -616,7 +610,7 @@ viewBody model =
 
 viewNavbar : Route -> Html Msg
 viewNavbar currentRoute =
-    div [ class "navbar bg-base-100 shadow-lg w-full sticky top-0 z-50" ]
+    div [ class "navbar bg-base-100 border-b border-b-base-300 w-full" ]
         [ div [ class "flex-none lg:hidden" ]
             [ label [ for "mobile-drawer", attribute "aria-label" "open sidebar", class "btn btn-square btn-ghost" ]
                 [ Icon.list Regular |> Icon.toHtml []
@@ -633,18 +627,15 @@ viewNavbar currentRoute =
                 (List.map (viewMenuItemTextOnly currentRoute) navigationItems)
             ]
         , div [ class "flex-none" ]
-            [ button
-                [ onClick ToggleTheme
-                , class "btn btn-ghost btn-circle"
-                , attribute "aria-label" "toggle theme"
-                ]
-                [ Icon.sun Regular |> Icon.withClass "w-5 h-5 swap-on" |> Icon.toHtml []
-                , Icon.moon Regular |> Icon.withClass "w-5 h-5 swap-off" |> Icon.toHtml []
+            [ label [ class "swap swap-rotate" ]
+                [ input [ type_ "checkbox", onClick ToggleTheme ] []
+                , Icon.sun Bold |> Icon.withClass "w-6 h-6 swap-on" |> Icon.toHtml []
+                , Icon.moon Bold |> Icon.withClass "w-6 h-6 swap-off" |> Icon.toHtml []
                 ]
             , div [ class "dropdown dropdown-end" ]
                 [ div [ attribute "tabindex" "0", attribute "role" "button", class "btn btn-ghost btn-circle avatar" ]
-                    [ div [ class "w-8 rounded-full" ]
-                        [ Icon.userCircle Regular |> Icon.withClass "w-8 h-8" |> Icon.toHtml []
+                    [ div [ class "w-6 rounded-full" ]
+                        [ Icon.userCircle Bold |> Icon.withClass "w-6 h-6" |> Icon.toHtml []
                         ]
                     ]
                 , ul [ attribute "tabindex" "0", class "menu menu-sm dropdown-content bg-base-100 rounded-box z-[1] mt-3 w-52 p-2 shadow-lg" ]
@@ -709,7 +700,7 @@ viewHomePage model =
             ]
         , div [ class "divider" ] [ text "Popular Users" ]
         , div [ class "flex flex-wrap gap-2 justify-center" ]
-            [ a [ href <| Routes.toString <| Routes.Repositories "gaeron", class "btn btn-primary btn-outline btn-sm" ] [ text "torvalds" ]
+            [ a [ href <| Routes.toString <| Routes.Repositories "torvalds", class "btn btn-primary btn-outline btn-sm" ] [ text "torvalds" ]
             , a [ href <| Routes.toString <| Routes.Repositories "gaearon", class "btn btn-primary btn-outline btn-sm" ] [ text "gaearon" ]
             , a [ href <| Routes.toString <| Routes.Repositories "tj", class "btn btn-primary btn-outline btn-sm" ] [ text "tj" ]
             , a [ href <| Routes.toString <| Routes.Repositories "sindresorhus", class "btn btn-primary btn-outline btn-sm" ] [ text "sindresorhus" ]
@@ -730,7 +721,7 @@ viewRepositoriesPage model =
 
 viewSidebar : Model -> Html Msg
 viewSidebar model =
-    div [ class "w-full lg:w-80 bg-base-200 lg:min-h-screen lg:sticky lg:top-20 flex flex-col gap-4" ]
+    div [ class "w-full lg:w-80 lg:min-h-screen lg:sticky lg:top-20 flex flex-col gap-4" ]
         [ label [ class "input w-full" ]
             [ Icon.magnifyingGlass Bold |> Icon.toHtml []
             , input
@@ -889,7 +880,7 @@ viewContent model =
             Loading ->
                 div [ class "space-y-6" ]
                     [ div [ class "mb-6" ]
-                        [ div [ class "stats stats-vertical lg:stats-horizontal shadow" ]
+                        [ div [ class "stats stats-vertical lg:stats-horizontal border border-base-300" ]
                             [ div [ class "stat" ]
                                 [ div [ class "stat-title" ] [ text "Total Repositories" ]
                                 , div [ class "stat-value" ]
@@ -929,7 +920,7 @@ viewContent model =
                         List.length filteredRepos
                 in
                 div [ class "flex flex-col gap-4" ]
-                    [ div [ class "stats" ]
+                    [ div [ class "stats stats-vertical lg:stats-horizontal border border-base-300" ]
                         [ div [ class "stat" ]
                             [ div [ class "stat-title" ] [ text "Total Repositories" ]
                             , div [ class "stat-value" ] [ text (String.fromInt totalCount) ]
@@ -966,7 +957,7 @@ viewContent model =
 
 viewRepositoryCard : Repository -> Html Msg
 viewRepositoryCard repo =
-    div [ class "card bg-base-100 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 border border-base-300" ]
+    div [ class "card bg-base-100 transition-all duration-300 hover:scale-105 border border-base-300" ]
         [ div [ class "card-body" ]
             [ div [ class "flex items-start justify-between mb-2" ]
                 [ div [ class "card-title text-lg" ]
@@ -1079,7 +1070,7 @@ viewSettings title =
 
 viewFooter : Html Msg
 viewFooter =
-    footer [ class "footer footer-center bg-base-200 text-base-content p-10" ]
+    footer [ class "footer footer-center text-base-content p-10" ]
         [ div [ class "grid grid-flow-col gap-4" ]
             [ a [ href "https://github.com", Html.Attributes.target "_blank", Html.Attributes.rel "noopener noreferrer" ]
                 [ Icon.githubLogo Regular |> Icon.withClass "w-6 h-6" |> Icon.toHtml [] ]
