@@ -19,13 +19,15 @@ interop =
 
 type alias Flags =
     { basePath : String
+    , theme : String
     }
 
 
 flags : Decoder Flags
 flags =
-    Decode.map Flags
+    Decode.map2 Flags
         (Decode.field "basePath" Decode.string)
+        (Decode.field "theme" Decode.string)
 
 
 type ToElm
@@ -46,15 +48,20 @@ toElm =
 
 type FromElm
     = ElmReady
+    | SaveTheme String
 
 
 fromElm : Codec FromElm
 fromElm =
     Codec.custom (Just "tag")
-        (\vElmReady value ->
+        (\vElmReady vSaveTheme value ->
             case value of
                 ElmReady ->
                     vElmReady
+
+                SaveTheme theme ->
+                    vSaveTheme theme
         )
         |> Codec.variant0 "ElmReady" ElmReady
+        |> Codec.namedVariant1 "SaveTheme" SaveTheme ( "theme", Codec.string )
         |> Codec.buildCustom

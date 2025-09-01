@@ -384,7 +384,7 @@ main =
 
 
 init : IO.Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
-init _ url key =
+init flags url key =
     let
         route : Route
         route =
@@ -419,7 +419,7 @@ init _ url key =
       , sortBy = SortByStars
       , accumulatedRepos = []
       , nextPageUrl = Nothing
-      , theme = "dark"
+      , theme = flags.theme
       , toasts = []
       , nextToastId = 1
       }
@@ -564,7 +564,7 @@ update msg model =
                     else
                         "light"
             in
-            ( { model | theme = newTheme }, Cmd.none )
+            ( { model | theme = newTheme }, IO.fromElm (IO.SaveTheme newTheme) )
 
         AddToast message toastType ->
             let
@@ -756,11 +756,11 @@ viewSidebar model =
                         allTopics =
                             getAllTopics repos
 
-                        topicCounts : List (String, Int)
+                        topicCounts : List ( String, Int )
                         topicCounts =
                             getTopicCounts repos allTopics
 
-                        filteredTopicCounts : List (String, Int)
+                        filteredTopicCounts : List ( String, Int )
                         filteredTopicCounts =
                             if String.isEmpty (String.trim model.topicSearchQuery) then
                                 topicCounts
