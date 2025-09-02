@@ -1,14 +1,14 @@
-module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Theme, User, main)
+module Main exposing (Model, Msg(..), RemoteData, SortOption, Theme, main)
 
 import Browser
 import Browser.Navigation as Nav
+import GitHub.API as GH
 import Html exposing (Html, a, button, div, footer, form, input, label, li, option, p, select, span, text, ul)
 import Html.Attributes exposing (attribute, class, disabled, for, href, id, placeholder, title, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import InteropDefinitions as IO
 import InteropPorts as IO
-import Json.Decode as Decode
 import Phosphor as Icon exposing (IconWeight(..))
 import Process
 import Routes exposing (Route(..))
@@ -28,26 +28,6 @@ type RemoteData error data
     | Loading
     | Success data
     | Failure error
-
-
-type alias Repository =
-    { id : Int
-    , name : String
-    , description : Maybe String
-    , htmlUrl : String
-    , language : Maybe String
-    , stargazersCount : Int
-    , topics : List String
-    , updatedAt : String
-    }
-
-
-type alias User =
-    { login : String
-    , name : Maybe String
-    , avatarUrl : String
-    , bio : Maybe String
-    }
 
 
 type SortOption
@@ -70,13 +50,13 @@ type alias Model =
     , url : Url.Url
     , route : Route
     , username : String
-    , repositories : RemoteData Http.Error (List Repository)
-    , user : RemoteData Http.Error User
+    , repositories : RemoteData Http.Error (List GH.Repository)
+    , user : RemoteData Http.Error GH.User
     , selectedTopics : List String
     , searchQuery : String
     , topicSearchQuery : String
     , sortBy : SortOption
-    , accumulatedRepos : List Repository
+    , accumulatedRepos : List GH.Repository
     , nextPageUrl : Maybe String
     , theme : Theme
     , toasts : List (Toast.Toast Msg)
@@ -99,8 +79,8 @@ type Msg
     | UsernameChanged String
     | SearchRepositories String
     | UpdateTopicSearch String
-    | UserFetched (Result Http.Error User)
-    | RepositoriesFetched (Result Http.Error String)
+    | UserFetched (Result Http.Error GH.User)
+    | RepositoriesFetched (Result Http.Error (List GH.Repository))
     | ToggleTopic String
     | ClearTopics
     | ChangeSort SortOption
@@ -128,47 +108,6 @@ userActionItems =
 
 
 -- HTTP Functions
-
-
-fetchUser : String -> Cmd Msg
-fetchUser username =
-    Http.get
-        { url = "https://api.github.com/users/" ++ username
-        , expect = Http.expectJson UserFetched userDecoder
-        }
-
-
-fetchRepositories : String -> Cmd Msg
-fetchRepositories username =
-    Http.get
-        { url = "https://api.github.com/users/" ++ username ++ "/starred?per_page=100"
-        , expect = Http.expectString RepositoriesFetched
-        }
-
-
-userDecoder : Decode.Decoder User
-userDecoder =
-    Decode.map4 User
-        (Decode.field "login" Decode.string)
-        (Decode.maybe (Decode.field "name" Decode.string))
-        (Decode.field "avatar_url" Decode.string)
-        (Decode.maybe (Decode.field "bio" Decode.string))
-
-
-repositoryDecoder : Decode.Decoder Repository
-repositoryDecoder =
-    Decode.map8 Repository
-        (Decode.field "id" Decode.int)
-        (Decode.field "name" Decode.string)
-        (Decode.maybe (Decode.field "description" Decode.string))
-        (Decode.field "html_url" Decode.string)
-        (Decode.maybe (Decode.field "language" Decode.string))
-        (Decode.field "stargazers_count" Decode.int)
-        (Decode.field "topics" (Decode.list Decode.string))
-        (Decode.field "updated_at" Decode.string)
-
-
-
 -- Helper Functions
 
 
@@ -202,27 +141,27 @@ toggleTheme theme =
             Dark
 
 
-getAllTopics : List Repository -> List String
+getAllTopics : List GH.Repository -> List String
 getAllTopics repos =
     repos
         |> List.concatMap .topics
         |> unique
 
 
-getTopicCounts : List Repository -> List String -> List ( String, Int )
+getTopicCounts : List GH.Repository -> List String -> List ( String, Int )
 getTopicCounts repos topics =
     topics
         |> List.map (\topic -> ( topic, countTopicOccurrences repos topic ))
 
 
-countTopicOccurrences : List Repository -> String -> Int
+countTopicOccurrences : List GH.Repository -> String -> Int
 countTopicOccurrences repos topic =
     repos
         |> List.filter (\repo -> List.member topic repo.topics)
         |> List.length
 
 
-filterAndSortRepos : Model -> List Repository -> List Repository
+filterAndSortRepos : Model -> List GH.Repository -> List GH.Repository
 filterAndSortRepos model repos =
     repos
         |> filterByTopics model.selectedTopics
@@ -230,7 +169,7 @@ filterAndSortRepos model repos =
         |> sortRepos model.sortBy
 
 
-filterByTopics : List String -> List Repository -> List Repository
+filterByTopics : List String -> List GH.Repository -> List GH.Repository
 filterByTopics selectedTopics repos =
     if List.isEmpty selectedTopics then
         repos
@@ -240,7 +179,7 @@ filterByTopics selectedTopics repos =
             |> List.filter (\repo -> List.any (\topic -> List.member topic repo.topics) selectedTopics)
 
 
-filterBySearch : String -> List Repository -> List Repository
+filterBySearch : String -> List GH.Repository -> List GH.Repository
 filterBySearch query repos =
     if String.isEmpty (String.trim query) then
         repos
@@ -259,7 +198,7 @@ filterBySearch query repos =
                 )
 
 
-sortRepos : SortOption -> List Repository -> List Repository
+sortRepos : SortOption -> List GH.Repository -> List GH.Repository
 sortRepos sortOption repos =
     case sortOption of
         SortByStars ->
@@ -286,25 +225,6 @@ stringToSortOption str =
 
         _ ->
             SortByStars
-
-
-errorToString : Http.Error -> String
-errorToString error =
-    case error of
-        Http.BadUrl url ->
-            "Bad URL: " ++ url
-
-        Http.Timeout ->
-            "Request timed out"
-
-        Http.NetworkError ->
-            "Network error"
-
-        Http.BadStatus status ->
-            "Bad status: " ++ String.fromInt status
-
-        Http.BadBody body ->
-            "Bad body: " ++ body
 
 
 unique : List a -> List a
@@ -421,14 +341,14 @@ init flags url key =
         route =
             Routes.fromUrl url
 
-        initialData : { username : String, user : RemoteData Http.Error User, repositories : RemoteData Http.Error (List Repository), cmd : Cmd Msg }
+        initialData : { username : String, user : RemoteData Http.Error GH.User, repositories : RemoteData Http.Error (List GH.Repository), cmd : Cmd Msg }
         initialData =
             case route of
                 Repositories username ->
                     { username = username
                     , user = Loading
                     , repositories = Loading
-                    , cmd = Cmd.batch [ fetchUser username, fetchRepositories username ]
+                    , cmd = Cmd.batch [ Task.attempt UserFetched (GH.fetchUser username), Task.attempt RepositoriesFetched (GH.fetchRepositories username) ]
                     }
 
                 _ ->
@@ -487,7 +407,7 @@ update msg model =
                     case model.route of
                         Repositories username ->
                             if model.repositories == NotAsked && model.user == NotAsked then
-                                Cmd.batch [ fetchUser username, fetchRepositories username ]
+                                Cmd.batch [ Task.attempt UserFetched (GH.fetchUser username), Task.attempt RepositoriesFetched (GH.fetchRepositories username) ]
 
                             else
                                 Cmd.none
@@ -510,7 +430,7 @@ update msg model =
                                 , searchQuery = ""
                                 , sortBy = SortByStars
                               }
-                            , Cmd.batch [ fetchUser username, fetchRepositories username, Nav.pushUrl model.key (Url.toString url) ]
+                            , Cmd.batch [ Task.attempt UserFetched (GH.fetchUser username), Task.attempt RepositoriesFetched (GH.fetchRepositories username), Nav.pushUrl model.key (Url.toString url) ]
                             )
 
                         _ ->
@@ -540,26 +460,19 @@ update msg model =
 
                 Err error ->
                     ( { model | user = Failure error }
-                    , Task.perform (\_ -> AddToast ("Failed to load user: " ++ errorToString error) Toast.Error) (Task.succeed ())
+                    , Task.perform (\_ -> AddToast ("Failed to load user: " ++ GH.errorToString error) Toast.Error) (Task.succeed ())
                     )
 
         RepositoriesFetched result ->
             case result of
-                Ok jsonString ->
-                    case Decode.decodeString (Decode.list repositoryDecoder) jsonString of
-                        Ok repos ->
-                            ( { model | repositories = Success repos }
-                            , Cmd.none
-                            )
-
-                        Err decodeError ->
-                            ( { model | repositories = Failure (Http.BadBody (Decode.errorToString decodeError)) }
-                            , Task.perform (\_ -> AddToast "Failed to parse repository data" Toast.Error) (Task.succeed ())
-                            )
+                Ok repos ->
+                    ( { model | repositories = Success repos }
+                    , Cmd.none
+                    )
 
                 Err error ->
                     ( { model | repositories = Failure error }
-                    , Task.perform (\_ -> AddToast ("Failed to load repositories: " ++ errorToString error) Toast.Error) (Task.succeed ())
+                    , Task.perform (\_ -> AddToast ("Failed to load repositories: " ++ GH.errorToString error) Toast.Error) (Task.succeed ())
                     )
 
         ToggleTopic topic ->
@@ -582,7 +495,7 @@ update msg model =
 
         NavigateToRepositories username ->
             ( { model | user = Loading, repositories = Loading }
-            , Cmd.batch [ fetchUser username, fetchRepositories username, Nav.pushUrl model.key (Routes.toString (Repositories username)) ]
+            , Cmd.batch [ Task.attempt UserFetched (GH.fetchUser username), Task.attempt RepositoriesFetched (GH.fetchRepositories username), Nav.pushUrl model.key (Routes.toString (Repositories username)) ]
             )
 
         ToggleTheme ->
@@ -974,13 +887,13 @@ viewContent model =
                     [ Icon.warning Regular |> Icon.toHtml []
                     , div []
                         [ div [ class "font-semibold" ] [ text "Error loading repositories" ]
-                        , div [] [ text (errorToString error) ]
+                        , div [] [ text (GH.errorToString error) ]
                         ]
                     ]
 
             Success repos ->
                 let
-                    filteredRepos : List Repository
+                    filteredRepos : List GH.Repository
                     filteredRepos =
                         filterAndSortRepos model repos
 
@@ -1028,7 +941,7 @@ viewContent model =
         ]
 
 
-viewRepositoryCard : Repository -> Html Msg
+viewRepositoryCard : GH.Repository -> Html Msg
 viewRepositoryCard repo =
     Card.card [ class "bg-base-100 hover:border-base-300 border border-base-200" ]
         [ Card.body []
