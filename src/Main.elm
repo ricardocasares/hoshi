@@ -836,9 +836,10 @@ viewHeader model =
                                     ]
                                     []
                                 ]
-                            , button
+                            , label
                                 [ onClick ClearTopics
                                 , class "btn btn-error"
+                                , for "topics-modal"
                                 , disabled (List.isEmpty model.selectedTopics)
                                 ]
                                 [ text <| "Clear"
