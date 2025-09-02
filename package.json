@@ -18,7 +18,8 @@
     "prebuild": "elm-tooling install",
     "postinstall": "elm-tooling install",
     "interop": "elm-ts-interop --output src/Main.elm.d.ts",
-    "upgrade": "elm-json upgrade && cd review && elm-json upgrade && cd .."
+    "upgrade": "elm-json upgrade && cd review && elm-json upgrade && cd ..",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.6",
@@ -26,6 +27,7 @@
     "elm-review": "^2.13.2",
     "elm-tooling": "^1.15.1",
     "elm-ts-interop": "^0.0.8",
+    "husky": "^9.1.7",
     "npm-run-all": "^4.1.5",
     "tailwindcss": "^4.1.6",
     "typescript": "^5.9.2",
