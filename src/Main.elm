@@ -697,7 +697,7 @@ viewTopicFilter selectedTopics ( topic, count ) =
 
 viewTopicSkeleton : Html Msg
 viewTopicSkeleton =
-    div [ class "flex-1 h-6 bg-base-300 rounded animate-pulse mb-3" ] []
+    li [ class "flex-1 bg-base-300 text-base-300 rounded animate-pulse mb-3" ] [ text "." ]
 
 
 viewUserSkeleton : Html Msg
@@ -780,14 +780,18 @@ viewHeader model =
                         , option [ value "name", Html.Attributes.selected (model.sortBy == SortByName) ] [ text "Name" ]
                         ]
                     ]
-                , label [ class "btn btn-outline border-neutral font-normal sticky top-2", for "topics-modal" ]
-                    [ Icon.funnelSimple Bold |> Icon.toHtml []
-                    , text "Filter topics"
-                    , if List.isEmpty model.selectedTopics then
-                        span [ class "badge badge-xs badge-ghost" ] [ text "0" ]
+                , label [ class "input w-full font-normal sticky top-2 cursor-pointer", for "topics-modal" ]
+                    [ span [ class "label" ]
+                        [ Icon.funnelSimple Bold |> Icon.toHtml []
+                        , text "Selected topics"
+                        ]
+                    , span [ class "text-right w-full" ]
+                        [ if List.isEmpty model.selectedTopics then
+                            text "0"
 
-                      else
-                        span [ class "badge badge-xs badge-primary" ] [ text <| String.fromInt <| List.length model.selectedTopics ]
+                          else
+                            text <| String.fromInt <| List.length model.selectedTopics
+                        ]
                     ]
                 , input [ type_ "checkbox", class "modal-toggle", id "topics-modal" ] []
                 , div [ class "modal modal-bottom sm:modal-middle", attribute "role" "dialog" ]
@@ -838,7 +842,7 @@ viewHeader model =
                                 ]
                             , label
                                 [ onClick ClearTopics
-                                , class "btn btn-error"
+                                , class "btn btn-error btn-soft"
                                 , for "topics-modal"
                                 , disabled (List.isEmpty model.selectedTopics)
                                 ]
@@ -865,21 +869,7 @@ viewContent model =
 
             Loading ->
                 div [ class "flex flex-col gap-4" ]
-                    [ div [ class "stats stats-vertical lg:stats-horizontal border border-base-300" ]
-                        [ div [ class "stat" ]
-                            [ div [ class "stat-title" ] [ text "Total Repositories" ]
-                            , div [ class "stat-value" ]
-                                [ div [ class "loading loading-spinner loading-lg" ] [] ]
-                            , div [ class "stat-desc" ] [ text "Loading..." ]
-                            ]
-                        , div [ class "stat" ]
-                            [ div [ class "stat-title" ] [ text "Filtered Results" ]
-                            , div [ class "stat-value" ]
-                                [ div [ class "loading loading-spinner loading-lg" ] [] ]
-                            , div [ class "stat-desc" ] [ text "Loading..." ]
-                            ]
-                        ]
-                    , div [ class "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" ]
+                    [ div [ class "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" ]
                         (List.repeat 6 viewRepositorySkeleton)
                     ]
 
@@ -894,57 +884,20 @@ viewContent model =
 
             Success repos ->
                 let
-                    filteredRepos : List GH.Repository
-                    filteredRepos =
+                    filtered : List GH.Repository
+                    filtered =
                         filterAndSortRepos model repos
-
-                    totalCount : Int
-                    totalCount =
-                        List.length repos
-
-                    filteredCount : Int
-                    filteredCount =
-                        List.length filteredRepos
                 in
                 div [ class "flex flex-col gap-4" ]
-                    [ div [ class "stats stats-vertical lg:stats-horizontal border border-base-300" ]
-                        [ div [ class "stat" ]
-                            [ div [ class "stat-title" ] [ text "Total Repositories" ]
-                            , div [ class "stat-value" ] [ text (String.fromInt totalCount) ]
-                            , div [ class "stat-desc" ] [ text "Starred by user" ]
-                            ]
-                        , div [ class "stat" ]
-                            [ div [ class "stat-title" ] [ text "Filtered Results" ]
-                            , div [ class "stat-value" ] [ text (String.fromInt filteredCount) ]
-                            , div [ class "stat-desc" ]
-                                [ text
-                                    (if totalCount == filteredCount then
-                                        "No filters applied"
-
-                                     else
-                                        String.fromInt (totalCount - filteredCount) ++ " hidden"
-                                    )
-                                ]
-                            ]
-                        , if not (List.isEmpty model.selectedTopics) then
-                            div [ class "stat" ]
-                                [ div [ class "stat-title" ] [ text "Active Filters" ]
-                                , div [ class "stat-value" ] [ text (String.fromInt (List.length model.selectedTopics)) ]
-                                , div [ class "stat-desc" ] [ text "Topics selected" ]
-                                ]
-
-                          else
-                            text ""
-                        ]
-                    , div [ class "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" ]
-                        (List.map viewRepositoryCard filteredRepos)
+                    [ div [ class "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" ]
+                        (List.map viewRepositoryCard filtered)
                     ]
         ]
 
 
 viewRepositoryCard : GH.Repository -> Html Msg
 viewRepositoryCard repo =
-    Card.card [ class "bg-base-100 hover:border-base-300 border border-base-200" ]
+    Card.card [ class "border border-base-300" ]
         [ Card.body []
             [ div [ class "flex items-start justify-between mb-2" ]
                 [ Card.title [ class "text-lg" ]
@@ -957,29 +910,28 @@ viewRepositoryCard repo =
                         [ text repo.name ]
                     ]
                 , div [ class "flex items-center gap-1 text-sm text-base-content/60" ]
-                    [ Icon.star Regular |> Icon.withClass "w-4 h-4 text-warning" |> Icon.toHtml []
+                    [ Icon.star Regular |> Icon.withClass "text-warning" |> Icon.toHtml []
                     , text (String.fromInt repo.stargazersCount)
                     ]
                 ]
-            , case repo.description of
-                Just desc ->
-                    p [ class "text-sm text-base-content/80 mb-4 line-clamp-2" ] [ text desc ]
-
-                Nothing ->
-                    text "No description available."
-            , div [ class "flex items-center justify-between" ]
-                [ case repo.language of
-                    Just lang ->
-                        div [ class "flex items-center gap-2 text-secondary" ]
-                            [ Icon.code Bold |> Icon.toHtml []
-                            , span [ class "text-sm" ] [ text lang ]
-                            ]
+            , p [ class "text-sm text-base-content/80 mb-4 line-clamp-2" ]
+                [ case repo.description of
+                    Just desc ->
+                        text desc
 
                     Nothing ->
-                        div [ class "flex items-center gap-2 text-secondary" ]
-                            [ Icon.code Bold |> Icon.toHtml []
-                            , span [ class "text-sm" ] [ text "Unknown" ]
-                            ]
+                        text "No description available."
+                ]
+            , div [ class "flex items-center gap-2 text-secondary" ]
+                [ Icon.code Bold |> Icon.toHtml []
+                , span [ class "font-mono text-xs" ]
+                    [ case repo.language of
+                        Just lang ->
+                            text lang
+
+                        Nothing ->
+                            text "Unknown"
+                    ]
                 ]
             ]
         ]
