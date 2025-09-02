@@ -2,8 +2,8 @@ module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Theme,
 
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, a, button, div, footer, form, h1, input, label, li, option, p, select, span, text, ul)
-import Html.Attributes exposing (attribute, class, disabled, for, href, id, placeholder, style, title, type_, value)
+import Html exposing (Html, a, button, div, footer, form, input, label, li, option, p, select, span, text, ul)
+import Html.Attributes exposing (attribute, class, disabled, for, href, id, placeholder, title, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import InteropDefinitions as IO
