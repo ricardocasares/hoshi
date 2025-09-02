@@ -2,8 +2,8 @@ module Main exposing (Model, Msg(..), RemoteData, Repository, SortOption, Theme,
 
 import Browser
 import Browser.Navigation as Nav
-import Html exposing (Html, a, button, div, footer, form, input, label, li, option, p, select, span, text, ul)
-import Html.Attributes exposing (attribute, class, disabled, for, href, id, placeholder, title, type_, value)
+import Html exposing (Html, a, button, div, footer, form, h1, input, label, li, option, p, select, span, text, ul)
+import Html.Attributes exposing (attribute, class, disabled, for, href, id, placeholder, style, title, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import InteropDefinitions as IO
@@ -752,63 +752,10 @@ viewHomePage model =
 viewRepositoriesPage : Model -> Html Msg
 viewRepositoriesPage model =
     div [ class "flex flex-col gap-12 lg:flex-row min-h-screen" ]
-        [ viewSidebar model
-        , div [ class "flex-1 flex flex-col gap-4" ]
+        [ div [ class "flex-1 flex flex-col gap-4" ]
             [ viewHeader model
             , viewContent model
             ]
-        ]
-
-
-viewSidebar : Model -> Html Msg
-viewSidebar model =
-    div [ class "w-full lg:w-80 lg:min-h-screen lg:sticky lg:top-20 flex flex-col gap-4" ]
-        [ label [ class "input w-full" ]
-            [ Icon.magnifyingGlass Bold |> Icon.toHtml []
-            , input
-                [ type_ "text"
-                , placeholder "Filter topics"
-                , value model.topicSearchQuery
-                , onInput UpdateTopicSearch
-                ]
-                []
-            ]
-        , div [ class "max-h-96 overflow-y-scroll" ]
-            [ div [ class "menu p-0 w-full gap-1" ]
-                (case model.repositories of
-                    Loading ->
-                        List.repeat 8 viewTopicSkeleton
-
-                    Success repos ->
-                        let
-                            allTopics : List String
-                            allTopics =
-                                getAllTopics repos
-
-                            topicCounts : List ( String, Int )
-                            topicCounts =
-                                getTopicCounts repos allTopics
-
-                            filteredTopicCounts : List ( String, Int )
-                            filteredTopicCounts =
-                                if String.isEmpty (String.trim model.topicSearchQuery) then
-                                    topicCounts
-
-                                else
-                                    List.filter (\( topic, _ ) -> fuzzyMatch model.topicSearchQuery topic) topicCounts
-                        in
-                        List.map (viewTopicFilter model.selectedTopics) (List.sortBy (Tuple.second >> negate) filteredTopicCounts)
-
-                    _ ->
-                        List.repeat 8 viewTopicSkeleton
-                )
-            ]
-        , button
-            [ onClick ClearTopics
-            , class "btn btn-outline btn-primary"
-            , disabled (List.isEmpty model.selectedTopics)
-            ]
-            [ text <| "Clear (" ++ (String.fromInt <| List.length model.selectedTopics) ++ ")" ]
         ]
 
 
@@ -829,6 +776,7 @@ viewTopicFilter selectedTopics ( topic, count ) =
     in
     li
         [ onClick (ToggleTopic topic)
+        , class "w-full"
         ]
         [ span [ class buttonClass ] [ text topic, div [ class "badge badge-sm" ] [ text (String.fromInt count) ] ]
         ]
@@ -877,26 +825,26 @@ viewHeader model =
         , div [ class "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4" ]
             [ div [ class "flex items-center gap-4" ]
                 [ case model.user of
-                     Success user ->
-                         div [ class "flex items-center gap-4" ]
-                             [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-14 h-14 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
-                             , div []
-                                 [ div [ class "font-semibold text-lg max-w-32 md:max-w-64 truncate" ] [ text (Maybe.withDefault user.login user.name) ]
-                                 , div [ class "text-sm text-secondary" ] [ text ("@" ++ user.login) ]
-                                 , case user.bio of
-                                     Just bio ->
-                                         div [ class "text-sm text-secondary max-w-32 truncate", title bio ] [ text bio ]
+                    Success user ->
+                        div [ class "flex items-center gap-4" ]
+                            [ Html.img [ Html.Attributes.src user.avatarUrl, class "w-14 h-14 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2" ] []
+                            , div []
+                                [ div [ class "font-semibold text-lg max-w-32 md:max-w-64 truncate" ] [ text (Maybe.withDefault user.login user.name) ]
+                                , div [ class "text-sm text-secondary" ] [ text ("@" ++ user.login) ]
+                                , case user.bio of
+                                    Just bio ->
+                                        div [ class "text-sm text-secondary max-w-32 truncate", title bio ] [ text bio ]
 
-                                     Nothing ->
-                                         text ""
-                                 ]
-                             ]
+                                    Nothing ->
+                                        text ""
+                                ]
+                            ]
 
-                     Loading ->
-                         viewUserSkeleton
+                    Loading ->
+                        viewUserSkeleton
 
-                     _ ->
-                         viewUserSkeleton
+                    _ ->
+                        viewUserSkeleton
                 ]
             , div [ class "flex flex-col sm:flex-row gap-4" ]
                 [ label [ class "input w-full" ]
@@ -918,6 +866,73 @@ viewHeader model =
                         , option [ value "updated", Html.Attributes.selected (model.sortBy == SortByUpdated) ] [ text "Updated" ]
                         , option [ value "name", Html.Attributes.selected (model.sortBy == SortByName) ] [ text "Name" ]
                         ]
+                    ]
+                , label [ class "btn btn-outline border-neutral font-normal sticky top-2", for "topics-modal" ]
+                    [ Icon.funnelSimple Bold |> Icon.toHtml []
+                    , text "Filter topics"
+                    , if List.isEmpty model.selectedTopics then
+                        span [ class "badge badge-xs badge-ghost" ] [ text "0" ]
+
+                      else
+                        span [ class "badge badge-xs badge-primary" ] [ text <| String.fromInt <| List.length model.selectedTopics ]
+                    ]
+                , input [ type_ "checkbox", class "modal-toggle", id "topics-modal" ] []
+                , div [ class "modal modal-bottom sm:modal-middle", attribute "role" "dialog" ]
+                    [ div [ class "modal-box flex flex-col gap-2" ]
+                        [ ul [ class "menu flex-nowrap w-full p-0 gap-1 h-64 overflow-scroll" ]
+                            (case model.repositories of
+                                Loading ->
+                                    List.repeat 8 viewTopicSkeleton
+
+                                Success repos ->
+                                    let
+                                        allTopics : List String
+                                        allTopics =
+                                            getAllTopics repos
+
+                                        topicCounts : List ( String, Int )
+                                        topicCounts =
+                                            getTopicCounts repos allTopics
+
+                                        filteredTopicCounts : List ( String, Int )
+                                        filteredTopicCounts =
+                                            if String.isEmpty (String.trim model.topicSearchQuery) then
+                                                topicCounts
+
+                                            else
+                                                List.filter (\( topic, _ ) -> fuzzyMatch model.topicSearchQuery topic) topicCounts
+                                    in
+                                    case filteredTopicCounts of
+                                        [] ->
+                                            [ div [ class "h-64 flex items-center justify-center" ] [ Icon.magnifyingGlass Bold |> Icon.withClass "h-12 w-12 text-neutral" |> Icon.toHtml [] ] ]
+
+                                        list ->
+                                            List.map (viewTopicFilter model.selectedTopics) (List.sortBy (Tuple.second >> negate) list)
+
+                                _ ->
+                                    List.repeat 8 viewTopicSkeleton
+                            )
+                        , div [ class "flex gap-2" ]
+                            [ label [ class "input w-full" ]
+                                [ Icon.magnifyingGlass Bold |> Icon.toHtml []
+                                , input
+                                    [ type_ "search"
+                                    , placeholder "Filter topics"
+                                    , value model.topicSearchQuery
+                                    , onInput UpdateTopicSearch
+                                    ]
+                                    []
+                                ]
+                            , button
+                                [ onClick ClearTopics
+                                , class "btn btn-error"
+                                , disabled (List.isEmpty model.selectedTopics)
+                                ]
+                                [ text <| "Clear"
+                                ]
+                            ]
+                        ]
+                    , label [ class "modal-backdrop", for "topics-modal" ] [ text "Close" ]
                     ]
                 ]
             ]
